@@ -33,7 +33,12 @@ function serveArtifacts() {
         }
         fs.stat(target, (err, stat) => {
           if (err || !stat.isFile()) {
-            next();
+            // Bewusst 404 statt `next()`: Vites SPA-Fallback wuerde sonst
+            // `index.html` mit Status 200 ausliefern, und ein fehlendes
+            // Artefakt kaeme als HTML im Binaerparser an — ein Fehler, der
+            // sich als kaputtes Datenformat tarnt statt als fehlende Datei.
+            res.statusCode = 404;
+            res.end('not found');
             return;
           }
           res.setHeader(

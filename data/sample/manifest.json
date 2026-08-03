@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "created_at": "2026-08-03T15:37:37+00:00",
+  "created_at": "2026-08-03T19:22:03+00:00",
   "n": 1000,
   "corpus": {
     "id": "met-open-access",
@@ -40,7 +40,7 @@
     "umap_densmap": false,
     "random_state": 20260803,
     "pca_explained_variance": 0.8997780680656433,
-    "seconds": 30.300642713000016,
+    "seconds": 24.824041834000013,
     "placeholder_embeddings": true
   },
   "coords": {
@@ -92,6 +92,93 @@
       "Die Struktur ist nicht besser als bei strukturlos gemachten Daten (0.126 gegen 0.128) — was zu sehen ist, ist ein Artefakt des Verfahrens."
     ]
   },
+  "metadata": {
+    "facet_fields": [
+      "department",
+      "classification",
+      "culture",
+      "period"
+    ],
+    "facet_values": {
+      "department": [
+        "Asian Art",
+        "Costume Institute",
+        "Drawings and Prints",
+        "Egyptian Art",
+        "European Sculpture and Decorative Arts",
+        "Greek and Roman Art",
+        "Islamic Art",
+        "The American Wing"
+      ],
+      "classification": [
+        "Andere",
+        "Bronzes",
+        "Ceramics",
+        "Ceramics-Porcelain",
+        "Codices",
+        "Drawings",
+        "Glass",
+        "Gold and Silver",
+        "Medals and Plaquettes",
+        "Paintings",
+        "Prints",
+        "Sculpture",
+        "Terracottas",
+        "Textiles-Embroidered",
+        "Textiles-Woven",
+        "Vases",
+        "unbekannt"
+      ],
+      "culture": [
+        "American",
+        "American or European",
+        "Andere",
+        "British",
+        "British, London",
+        "China",
+        "Cypriot",
+        "Etruscan",
+        "French",
+        "French, Paris",
+        "Greek",
+        "Greek, Attic",
+        "Italian",
+        "Italian, Rome",
+        "Japan",
+        "Roman",
+        "unbekannt"
+      ],
+      "period": [
+        "1. Jh.",
+        "10. Jh.",
+        "11. Jh.",
+        "12. Jh.",
+        "14. Jh.",
+        "15. Jh.",
+        "16. Jh.",
+        "17. Jh.",
+        "18. Jh.",
+        "19. Jh.",
+        "20. Jh.",
+        "4. Jh.",
+        "500 v. Chr. – 0",
+        "8. Jh.",
+        "9. Jh.",
+        "Andere",
+        "vor 500 v. Chr."
+      ]
+    },
+    "text_fields": [
+      "title",
+      "artist",
+      "object_date",
+      "medium",
+      "classification",
+      "object_number",
+      "link"
+    ],
+    "field_separator": "\u001f"
+  },
   "files": [
     {
       "name": "coords.i16.bin",
@@ -131,10 +218,38 @@
       ],
       "bytes": 80000,
       "sha256": "298f88d02f32375a50d04be387984bcf4df36bc76cdaa68512a5f70e101ef48b"
+    },
+    {
+      "name": "facets.u8.bin",
+      "dtype": "<u1",
+      "shape": [
+        1000,
+        4
+      ],
+      "bytes": 4000,
+      "sha256": "47f965f1302e598245a976aedd63e9a4b76883cdcc70ebaaf34abf33f9d87026"
+    },
+    {
+      "name": "text.bin",
+      "dtype": "utf-8",
+      "shape": [
+        1000
+      ],
+      "bytes": 157122,
+      "sha256": "6b9a6f8ebb11279519d6117ad9cd400b99db190e787ca3d4cf42596e10dd907c"
+    },
+    {
+      "name": "text_offsets.u32.bin",
+      "dtype": "<u4",
+      "shape": [
+        1001
+      ],
+      "bytes": 4004,
+      "sha256": "27e596d3e94b8ad4cd133b388d3533a382bc8aaf4c22128fdde78e2bfd6e9f92"
     }
   ],
   "provenance": {
-    "git_commit": "efee08b224a314ea383ec8d717664f1536443512",
+    "git_commit": "ed7d13a9c0e8e7ae02ed8d500dafe56a9cc27446",
     "libraries": {
       "python": "3.11.15",
       "numpy": "2.4.6",

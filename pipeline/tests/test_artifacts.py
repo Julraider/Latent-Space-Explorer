@@ -257,6 +257,136 @@ def test_manifest_roundtrip(cfg, run_dir):
 
 
 # ---------------------------------------------------------------------------
+# Metadaten
+# ---------------------------------------------------------------------------
+
+
+def _rows(n=50):
+    return [
+        {
+            "title": f"Werk {i}",
+            "artist": "Anonym" if i % 3 else "",
+            "department": ["Egyptian Art", "Asian Art"][i % 2],
+            "culture": ["Egyptian", "Japan", "unbekannt"][i % 3],
+            "link": f"http://example.org/{i}",
+        }
+        for i in range(n)
+    ]
+
+
+def _write_with_metadata(cfg, run_dir, rows):
+    coords, labels, names = synthetic.make_coords(len(rows), seed=1)
+    writer = artifacts.ArtifactWriter(run_dir, cfg)
+    writer.add_coords(coords)
+    writer.add_labels(labels, names)
+    writer.add_colors(synthetic.palette_colors(labels))
+    meta = writer.add_metadata(
+        rows,
+        facet_fields=["department", "culture"],
+        text_fields=["title", "artist", "link"],
+    )
+    return writer.finish(corpus={"id": "test"}), meta
+
+
+def test_metadata_facets_and_text(cfg, run_dir):
+    rows = _rows(50)
+    manifest, meta = _write_with_metadata(cfg, run_dir, rows)
+
+    assert meta["facet_fields"] == ["department", "culture"]
+    assert meta["facet_values"]["department"] == ["Asian Art", "Egyptian Art"]
+    assert artifacts.verify(run_dir) == []
+    assert manifest.metadata["text_fields"] == ["title", "artist", "link"]
+
+    facets = artifacts.read_binary(run_dir / artifacts.FACETS_FILE, "<u1", (50, 2))
+    vocabulary = meta["facet_values"]["department"]
+    for row, source in enumerate(rows):
+        assert vocabulary[facets[row, 0]] == source["department"]
+
+
+def test_text_offsets_have_n_plus_one_entries(cfg, run_dir):
+    """Damit die Laenge des letzten Datensatzes ohne Sonderfall ableitbar ist."""
+    rows = _rows(20)
+    manifest, _ = _write_with_metadata(cfg, run_dir, rows)
+
+    offsets = artifacts.read_binary(run_dir / artifacts.TEXT_OFFSETS_FILE, "<u4", (21,))
+    assert offsets[0] == 0
+    assert offsets[-1] == (run_dir / artifacts.TEXT_FILE).stat().st_size
+    assert (np.diff(offsets) > 0).all()
+    # verify() darf die N+1-Zeile nicht als Invariantenbruch melden.
+    assert artifacts.verify(run_dir) == []
+
+
+def test_text_roundtrips_including_umlauts_and_empty_fields(cfg, run_dir):
+    rows = [
+        {"title": "Löwenkopf aus Ägypten", "artist": "", "link": "http://x/1"},
+        {"title": "祭器", "artist": "無名", "link": ""},
+        {"title": "Œuvre — mit Gedankenstrich", "artist": "A|B;C", "link": "http://x/3"},
+    ] * 10
+    manifest, meta = _write_with_metadata(
+        cfg, run_dir, [{**row, "department": "X", "culture": "Y"} for row in rows]
+    )
+
+    blob = (run_dir / artifacts.TEXT_FILE).read_bytes()
+    offsets = artifacts.read_binary(
+        run_dir / artifacts.TEXT_OFFSETS_FILE, "<u4", (len(rows) + 1,)
+    )
+    for index, source in enumerate(rows):
+        record = blob[offsets[index] : offsets[index + 1]].decode("utf-8")
+        parts = record.split(artifacts.FIELD_SEPARATOR)
+        assert parts[0] == source["title"]
+        assert parts[1] == source["artist"]
+        assert parts[2] == source["link"]
+
+
+def test_separator_cannot_collide_with_real_metadata(cfg, run_dir):
+    """ASCII 31 ist dafuer gedacht — anders als Pipe, Semikolon oder Tab.
+
+    Alle drei kommen in echten Met-Titeln und -Materialangaben vor.
+    """
+    rows = [
+        {
+            "title": "Teil A|Teil B; Teil C\tTeil D",
+            "artist": "X",
+            "link": "",
+            "department": "X",
+            "culture": "Y",
+        }
+    ] * 5
+    _write_with_metadata(cfg, run_dir, rows)
+
+    blob = (run_dir / artifacts.TEXT_FILE).read_bytes()
+    offsets = artifacts.read_binary(run_dir / artifacts.TEXT_OFFSETS_FILE, "<u4", (6,))
+    record = blob[offsets[0] : offsets[1]].decode("utf-8")
+    assert record.split(artifacts.FIELD_SEPARATOR)[0] == "Teil A|Teil B; Teil C\tTeil D"
+
+
+def test_metadata_participates_in_id_invariant(cfg, run_dir):
+    """Zu wenige Metadatenzeilen muessen auffallen, nicht still verrutschen."""
+    coords, labels, names = synthetic.make_coords(30, seed=2)
+    writer = artifacts.ArtifactWriter(run_dir, cfg)
+    writer.add_coords(coords)
+    writer.add_labels(labels, names)
+    writer.add_metadata(
+        _rows(29), facet_fields=["department"], text_fields=["title"]
+    )
+    with pytest.raises(artifacts.ArtifactError, match="ID-Invariante"):
+        writer.finish()
+
+
+def test_facet_with_too_many_values_is_rejected(cfg, run_dir):
+    """uint8 traegt 256 Werte — darueber muss im Korpusschritt gekappt werden."""
+    rows = [
+        {"title": f"T{i}", "department": f"Wert-{i}", "culture": "X"} for i in range(300)
+    ]
+    coords, labels, names = synthetic.make_coords(300, seed=3)
+    writer = artifacts.ArtifactWriter(run_dir, cfg)
+    writer.add_coords(coords)
+    writer.add_labels(labels, names)
+    with pytest.raises(artifacts.ArtifactError, match="cap_facet"):
+        writer.add_metadata(rows, facet_fields=["department"], text_fields=["title"])
+
+
+# ---------------------------------------------------------------------------
 # Synthetische Daten
 # ---------------------------------------------------------------------------
 

@@ -30,6 +30,18 @@ from .config import Config, ConfigError, load
 
 DEFAULT_RUN = "data/runs/dev"
 
+# Felder im Detailpanel, in Anzeigereihenfolge. Das erste Feld ist der Titel und
+# wird zusaetzlich fuer die Stichwortsuche verwendet.
+TEXT_FIELDS = [
+    "title",
+    "artist",
+    "object_date",
+    "medium",
+    "classification",
+    "object_number",
+    "link",
+]
+
 
 def _section(title: str) -> None:
     print(f"\n\033[1m{title}\033[0m")
@@ -384,6 +396,12 @@ def cmd_project(args: argparse.Namespace) -> int:
     writer.add_labels(labels, label_names)
     writer.add_colors(synthetic.palette_colors(labels))
     writer.add_neighbors(np.asarray(neighbors, dtype=np.uint32))
+    # Reihenfolge von `table` ist die ID-Invariante — dieselbe wie coords.
+    writer.add_metadata(
+        table.to_pylist(),
+        facet_fields=list(config.corpus["facets"]),
+        text_fields=TEXT_FIELDS,
+    )
     if args.keep_embeddings:
         writer.add_embeddings(embeddings)
 

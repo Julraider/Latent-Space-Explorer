@@ -1,16 +1,24 @@
 /**
  * Einstiegspunkt des Viewers.
  *
- * Phase 0a: Gruest. Laedt einen Artefaktsatz, rendert ihn als instanzierte
- * Quads und beweist damit den Datenvertrag Ende zu Ende. Der Korpus ist noch
- * synthetisch — echte Met-Daten kommen in Phase 0b.
+ * Laedt einen Artefaktsatz, rendert ihn als instanzierte Quads und verbindet
+ * Auswahl, Filter und Suche. Der Korpus ist echt (Met Open Access); ob die
+ * Geometrie etwas bedeutet, sagt das Manifest — bei Platzhalter-Embeddings
+ * steht die Warnung im Bild.
  */
 
-import { Color, FogExp2, PerspectiveCamera, Scene, Vector2, WebGPURenderer } from 'three/webgpu';
+import { Color, FogExp2, PerspectiveCamera, Scene, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import { loadArtifacts } from './artifacts.js';
-import { createPointCloud } from './pointCloud.js';
+import { Picker } from './picking.js';
+import {
+  FLAG_MATCH,
+  FLAG_NEIGHBOR,
+  FLAG_SELECTED,
+  FLAG_VISIBLE,
+  createPointCloud,
+} from './pointCloud.js';
 
 const params = new URLSearchParams(location.search);
 const DATASET = params.get('data') ?? '/data/sample';
@@ -29,26 +37,42 @@ const BACKGROUND = new Color(0x07080c);
 // Unterschied, den bei weichen runden Sprites niemand sieht.
 const MAX_PIXEL_RATIO = 1.5;
 
-// Muss zu PALETTE in pipeline/src/lse/synthetic.py passen. Die Farben stehen
-// bereits pro Punkt in colors.u8.bin — die Legende braucht sie zusaetzlich, um
-// Labelnamen zuzuordnen, ohne die Punktdaten zurueckzulesen.
+// Muss zu PALETTE in pipeline/src/lse/synthetic.py passen.
 const PALETTE = [
   [230, 159, 0], [86, 180, 233], [0, 158, 115], [240, 228, 66],
   [0, 114, 178], [213, 94, 0], [204, 121, 167], [148, 103, 189],
 ];
 
-const ui = {
-  status: document.getElementById('status'),
-  statusDetail: document.getElementById('status-detail'),
-  hud: document.getElementById('hud'),
-  help: document.getElementById('help'),
-  legend: document.getElementById('legend'),
-  warning: document.getElementById('warning'),
-  points: document.getElementById('stat-points'),
-  backend: document.getElementById('stat-backend'),
-  frame: document.getElementById('stat-frame'),
-  draws: document.getElementById('stat-draws'),
+const FIELD_LABELS = {
+  title: 'Titel',
+  artist: 'Künstler',
+  object_date: 'Datiert',
+  medium: 'Material',
+  classification: 'Gattung',
+  object_number: 'Inventarnr.',
+  link: 'Beim Met',
+  department: 'Abteilung',
+  culture: 'Kultur',
+  period: 'Epoche',
 };
+
+const ui = {};
+for (const id of [
+  'status', 'status-detail', 'hud', 'help', 'legend', 'warning', 'controls',
+  'search', 'search-count', 'filters', 'reset', 'detail', 'detail-title',
+  'detail-fields', 'detail-neighbors', 'stat-points', 'stat-backend',
+  'stat-frame', 'stat-draws',
+]) {
+  ui[id] = document.getElementById(id);
+}
+
+function fail(headline, detail) {
+  ui.status.classList.remove('hidden');
+  ui.status.classList.add('error');
+  ui.status.querySelector('.headline').textContent = headline;
+  ui['status-detail'].textContent = detail;
+  console.error(headline, detail);
+}
 
 function renderLegend(labelNames) {
   if (!labelNames.length) return;
@@ -66,16 +90,8 @@ function renderLegend(labelNames) {
   ui.legend.hidden = false;
 }
 
-function fail(headline, detail) {
-  ui.status.classList.remove('hidden');
-  ui.status.classList.add('error');
-  ui.status.querySelector('.headline').textContent = headline;
-  ui.statusDetail.textContent = detail;
-  console.error(headline, detail);
-}
-
 async function main() {
-  ui.statusDetail.textContent = DATASET;
+  ui['status-detail'].textContent = DATASET;
 
   let data;
   try {
@@ -99,19 +115,14 @@ async function main() {
   const camera = new PerspectiveCamera(55, 1, radius * 0.005, radius * 8);
   camera.position.set(radius * 1.6, radius * 0.9, radius * 1.6);
 
-  // Nebeldichte aus dem Radius: ein UMAP-Neulauf aendert den Massstab, und eine
-  // handgetunte Konstante waere danach still falsch.
-  //
-  // Der Faktor ist gerechnet, nicht geraten. FogExp2 liefert exp(-(d*k)^2); die
-  // Kamera steht bei ~2,4 Radien, die Wolke reicht also von ~1,4 bis ~3,4
-  // Radien. Mit k = 0,3/r bleibt die Vorderseite bei ~83 % Sichtbarkeit und die
-  // Rueckseite faellt auf ~35 % — ein lesbarer Tiefenhinweis, statt die Wolke
-  // flaechendeckend abzudunkeln.
+  // Nebeldichte aus dem Radius, gerechnet statt geraten: FogExp2 liefert
+  // exp(-(d*k)^2), die Kamera steht bei ~2,4 Radien, die Wolke reicht also von
+  // ~1,4 bis ~3,4 Radien. Mit k = 0,3/r bleibt die Vorderseite bei ~83 %
+  // Sichtbarkeit und die Rueckseite faellt auf ~35 %.
   //
   // Wichtig: three wendet den Nebel auch bei gesetztem `fragmentNode` an
-  // (NodeMaterial macht das in setupOutput, nach dem eigenen Knoten). Ein zu
-  // hoher Wert frisst also die gesamte Farbigkeit, ohne dass der Shader daran
-  // erkennbar schuld waere.
+  // (NodeMaterial, setupOutput). Ein zu hoher Wert frisst die gesamte
+  // Farbigkeit, ohne dass der Shader daran erkennbar schuld waere.
   scene.fog = new FogExp2(BACKGROUND.getHex(), 0.3 / radius);
 
   const renderer = new WebGPURenderer({ antialias: true, forceWebGL: FORCE_WEBGL });
@@ -127,7 +138,10 @@ async function main() {
     return;
   }
 
-  const cloud = createPointCloud(data, { maxPointPx: 48 });
+  const cloud = createPointCloud(data, {
+    maxPointPx: 48,
+    background: [BACKGROUND.r, BACKGROUND.g, BACKGROUND.b],
+  });
   scene.add(cloud);
 
   // Orbit um ein bewegliches Ziel, nicht Free-Fly: eine UMAP-Wolke ist ein
@@ -138,13 +152,303 @@ async function main() {
   controls.dampingFactor = 0.08;
   controls.target.set(0, 0, 0);
   controls.minDistance = radius * 0.05;
-  // Welt-Up ist gesperrt und es gibt keinen Roll — der groesste Ausloeser fuer
-  // Motion Sickness im Browser-3D. OrbitControls macht das per Vorgabe richtig,
-  // TrackballControls nicht.
   controls.maxDistance = radius * 4;
 
-  ui.points.textContent = data.n.toLocaleString('de-DE');
-  ui.backend.textContent = renderer.backend?.isWebGPUBackend ? 'WebGPU' : 'WebGL2 (Fallback)';
+  const picker = new Picker(renderer, scene, camera, cloud);
+
+  // ---------------------------------------------------------------------
+  // Kamerafahrt
+  // ---------------------------------------------------------------------
+
+  let tween = null;
+
+  /**
+   * Faehrt Ziel und Kamera weich an eine neue Position.
+   *
+   * Nie springen: jede programmatische Bewegung ist ein Tween. Sprünge
+   * desorientieren und werden als Fehler gelesen. Und weil das Ziel immer ein
+   * echter Punkt ist, kann man sich dabei nicht verirren.
+   */
+  function flyTo(destination, distance, duration = 620) {
+    const direction = camera.position.clone().sub(controls.target);
+    if (direction.lengthSq() < 1e-9) direction.set(0, 0, 1);
+    direction.setLength(distance);
+    tween = {
+      start: performance.now(),
+      duration,
+      fromTarget: controls.target.clone(),
+      toTarget: destination.clone(),
+      fromCamera: camera.position.clone(),
+      toCamera: destination.clone().add(direction),
+    };
+  }
+
+  function updateTween(now) {
+    if (!tween) return;
+    const t = Math.min(1, (now - tween.start) / tween.duration);
+    // Ease-in-out; bei t=1 exakt am Ziel.
+    const e = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+    controls.target.lerpVectors(tween.fromTarget, tween.toTarget, e);
+    camera.position.lerpVectors(tween.fromCamera, tween.toCamera, e);
+    if (t >= 1) tween = null;
+  }
+
+  const scratch = new Vector3();
+  /** Weltposition eines Punktes — dieselbe Rechnung wie im Vertex-Shader. */
+  function pointPosition(index, out = scratch) {
+    const stride = data.strides.coord;
+    const { offset, half } = data.dequant;
+    return out.set(
+      (data.coords[index * stride] / 32767) * half[0] + offset[0],
+      (data.coords[index * stride + 1] / 32767) * half[1] + offset[1],
+      (data.coords[index * stride + 2] / 32767) * half[2] + offset[2],
+    );
+  }
+
+  function overview() {
+    flyTo(new Vector3(0, 0, 0), radius * 2.4);
+  }
+
+  // ---------------------------------------------------------------------
+  // Zustand: Auswahl, Filter, Suche
+  // ---------------------------------------------------------------------
+
+  let metadata = null;
+  let neighbors = null;
+  let selected = -1;
+  const activeFilters = new Map(); // Facettenname -> Wertindex, -1 = alle
+
+  function setFlag(index, bit, on) {
+    if (on) cloud.flags[index] |= bit;
+    else cloud.flags[index] &= ~bit;
+  }
+
+  function clearFlagEverywhere(bit) {
+    for (let i = 0; i < cloud.flags.length; i++) cloud.flags[i] &= ~bit;
+  }
+
+  function applyFilters() {
+    if (!metadata || activeFilters.size === 0) {
+      for (let i = 0; i < cloud.flags.length; i++) cloud.flags[i] |= FLAG_VISIBLE;
+      cloud.commitFlags();
+      return;
+    }
+    const columns = [...activeFilters.entries()]
+      .filter(([, value]) => value >= 0)
+      .map(([field, value]) => [metadata.facetFields.indexOf(field), value]);
+
+    for (let i = 0; i < data.n; i++) {
+      let visible = true;
+      for (const [column, value] of columns) {
+        if (metadata.facetIndex(i, column) !== value) {
+          visible = false;
+          break;
+        }
+      }
+      setFlag(i, FLAG_VISIBLE, visible);
+    }
+    cloud.commitFlags();
+  }
+
+  function runSearch(query) {
+    clearFlagEverywhere(FLAG_MATCH);
+    if (!metadata || !query.trim()) {
+      cloud.uniforms.searchActive.value = 0;
+      ui['search-count'].textContent = '';
+      cloud.commitFlags();
+      return;
+    }
+    const hits = metadata.search(query.trim());
+    for (const index of hits) cloud.flags[index] |= FLAG_MATCH;
+    cloud.uniforms.searchActive.value = 1;
+    ui['search-count'].textContent =
+      hits.length === 0
+        ? 'keine Treffer'
+        : `${hits.length.toLocaleString('de-DE')} Treffer`;
+    cloud.commitFlags();
+
+    // Zum ersten Treffer fliegen: sonst "findet" die Suche Punkte tief in der
+    // Wolke, und man sieht drei davon.
+    if (hits.length) flyTo(pointPosition(hits[0], new Vector3()), radius * 0.6);
+  }
+
+  async function select(index) {
+    if (selected >= 0) {
+      setFlag(selected, FLAG_SELECTED, false);
+      clearFlagEverywhere(FLAG_NEIGHBOR);
+    }
+    selected = index;
+
+    if (index < 0) {
+      cloud.commitFlags();
+      ui.detail.hidden = true;
+      return;
+    }
+    setFlag(index, FLAG_SELECTED, true);
+
+    // Die echten hochdimensionalen Nachbarn hervorheben — nicht die in 3D.
+    // Genau die Abweichung zwischen beidem ist die Aussage: wo ein Nachbar auf
+    // der gegenueberliegenden Seite landet, sieht man die Projektionsverzerrung.
+    neighbors ??= await data.loadNeighbors();
+    if (neighbors) {
+      const k = data.neighborsK;
+      for (let j = 0; j < k; j++) {
+        const neighbor = neighbors[index * k + j];
+        if (neighbor < data.n) setFlag(neighbor, FLAG_NEIGHBOR, true);
+      }
+    }
+    cloud.commitFlags();
+    showDetail(index);
+  }
+
+  function showDetail(index) {
+    const record = metadata?.record(index);
+    ui['detail-title'].textContent = record?.title || `Punkt ${index}`;
+
+    const rows = [];
+    // `seen` verhindert Doppelzeilen: Felder wie `classification` sind sowohl
+    // Facette als auch Textfeld und wuerden sonst zweimal erscheinen.
+    const seen = new Set(['title']);
+
+    const labelName = data.labelNames[data.labels[index]];
+    if (labelName) {
+      rows.push([FIELD_LABELS.department, labelName]);
+      seen.add('department');
+    }
+    if (metadata) {
+      for (const field of metadata.facetFields) {
+        if (seen.has(field)) continue;
+        const value = metadata.facet(index, field);
+        if (value && value !== 'unbekannt') rows.push([FIELD_LABELS[field] ?? field, value]);
+        seen.add(field);
+      }
+      for (const field of metadata.fields) {
+        if (seen.has(field)) continue;
+        const value = record?.[field];
+        if (value) rows.push([FIELD_LABELS[field] ?? field, value]);
+        seen.add(field);
+      }
+    }
+
+    ui['detail-fields'].replaceChildren(
+      ...rows.flatMap(([name, value]) => {
+        const dt = document.createElement('dt');
+        dt.textContent = name;
+        const dd = document.createElement('dd');
+        if (/^https?:\/\//.test(value)) {
+          const link = document.createElement('a');
+          link.href = value;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = 'Sammlungsseite öffnen';
+          dd.append(link);
+        } else {
+          dd.textContent = value;
+        }
+        return [dt, dd];
+      }),
+    );
+
+    ui['detail-neighbors'].textContent = neighbors
+      ? `${data.neighborsK} nächste Nachbarn im hochdimensionalen Raum hervorgehoben — `
+        + 'wo sie weit auseinanderliegen, zeigt sich die Verzerrung der Projektion.'
+      : '';
+    ui.detail.hidden = false;
+  }
+
+  function buildFilterUI() {
+    if (!metadata) return;
+    ui.filters.replaceChildren(
+      ...metadata.facetFields.map((field) => {
+        const label = document.createElement('label');
+        label.textContent = FIELD_LABELS[field] ?? field;
+        const dropdown = document.createElement('select');
+        const all = document.createElement('option');
+        all.value = '-1';
+        all.textContent = 'alle';
+        dropdown.append(all);
+        metadata.facetValues[field].forEach((value, index) => {
+          const option = document.createElement('option');
+          option.value = String(index);
+          option.textContent = value || '(leer)';
+          dropdown.append(option);
+        });
+        dropdown.addEventListener('change', () => {
+          activeFilters.set(field, Number(dropdown.value));
+          applyFilters();
+        });
+        label.append(dropdown);
+        return label;
+      }),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Eingaben
+  // ---------------------------------------------------------------------
+
+  let downAt = null;
+  renderer.domElement.addEventListener('pointerdown', (event) => {
+    downAt = { x: event.clientX, y: event.clientY };
+  });
+
+  renderer.domElement.addEventListener('pointerup', async (event) => {
+    // Nur als Klick werten, wenn kaum bewegt wurde — sonst selektiert jedes
+    // Drehen der Kamera einen Punkt.
+    if (!downAt) return;
+    const moved = Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y);
+    downAt = null;
+    if (moved > 4 || event.button !== 0) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    const index = await picker.pick(event.clientX - rect.left, event.clientY - rect.top);
+    await select(index);
+  });
+
+  renderer.domElement.addEventListener('dblclick', async (event) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const index = await picker.pick(event.clientX - rect.left, event.clientY - rect.top);
+    if (index < 0) {
+      overview();
+      return;
+    }
+    await select(index);
+    flyTo(pointPosition(index, new Vector3()), radius * 0.35);
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      select(-1);
+      overview();
+    }
+  });
+
+  ui.detail.querySelector('.close').addEventListener('click', () => select(-1));
+
+  let searchTimer = 0;
+  ui.search.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    // Entprellt: bei jedem Tastendruck ueber alle Titel zu suchen und die Flags
+    // hochzuladen waere Arbeit, die der Nutzer nie sieht.
+    searchTimer = setTimeout(() => runSearch(ui.search.value), 150);
+  });
+
+  ui.reset.addEventListener('click', () => {
+    ui.search.value = '';
+    runSearch('');
+    activeFilters.clear();
+    for (const dropdown of ui.filters.querySelectorAll('select')) dropdown.value = '-1';
+    applyFilters();
+    select(-1);
+    overview();
+  });
+
+  // ---------------------------------------------------------------------
+
+  ui['stat-points'].textContent = data.n.toLocaleString('de-DE');
+  ui['stat-backend'].textContent = renderer.backend?.isWebGPUBackend
+    ? 'WebGPU'
+    : 'WebGL2 (Fallback)';
   renderLegend(data.labelNames);
   ui.hud.hidden = false;
   ui.help.hidden = false;
@@ -154,12 +458,20 @@ async function main() {
   // die Illusion, gegen die das Go/No-Go-Tor gebaut wurde.
   if (data.manifest.projection?.placeholder_embeddings) {
     ui.warning.textContent =
-      'Platzhalter-Embeddings: die Metadaten sind echt, die Anordnung im Raum ' +
-      'bedeutet nichts. Erst `lse embed` liefert eine echte Geometrie.';
+      'Platzhalter-Embeddings: die Metadaten sind echt, die Anordnung im Raum '
+      + 'bedeutet nichts. Erst `lse embed` liefert eine echte Geometrie.';
     ui.warning.hidden = false;
   }
 
   ui.status.classList.add('hidden');
+
+  // Metadaten nachladen, ohne das erste Bild aufzuhalten.
+  data.loadMetadata().then((loaded) => {
+    if (!loaded) return;
+    metadata = loaded;
+    buildFilterUI();
+    ui.controls.hidden = false;
+  });
 
   function resize() {
     const { innerWidth: w, innerHeight: h } = window;
@@ -182,13 +494,12 @@ async function main() {
   let frameAccum = 0;
   let frameCount = 0;
   let lastReport = performance.now();
-  // Einmal allokiert: pro Frame ein neues Objekt zu erzeugen laedt den GC
-  // ohne Gegenwert ein.
   const drawingBuffer = new Vector2();
 
   renderer.setAnimationLoop(() => {
     const started = performance.now();
 
+    updateTween(started);
     controls.update();
     // Der Pixel-Clamp haengt an Bildhoehe und Sichtfeld — beides kann sich
     // jederzeit aendern.
@@ -198,8 +509,8 @@ async function main() {
     frameAccum += performance.now() - started;
     frameCount += 1;
     if (started - lastReport > 500) {
-      ui.frame.textContent = `${(frameAccum / frameCount).toFixed(1)} ms`;
-      ui.draws.textContent = String(renderer.info?.render?.drawCalls ?? '—');
+      ui['stat-frame'].textContent = `${(frameAccum / frameCount).toFixed(1)} ms`;
+      ui['stat-draws'].textContent = String(renderer.info?.render?.drawCalls ?? '—');
       frameAccum = 0;
       frameCount = 0;
       lastReport = started;

@@ -87,6 +87,14 @@ export async function loadArtifacts(base) {
     return neighborsPromise;
   };
 
+  // Facetten sind klein und werden bei jedem Filterklick gebraucht: bei 100k
+  // Punkten und vier Facetten 400 KB. Die laden wir mit.
+  let facets = null;
+  const facetEntry = files['facets.u8.bin'];
+  if (facetEntry) {
+    facets = new Uint8Array(await fetchBinary(base, 'facets.u8.bin', facetEntry.bytes));
+  }
+
   const coords = new Int16Array(coordsBuf);
   const colors = new Uint8Array(colorsBuf);
   const labels = new Uint16Array(labelsBuf);
@@ -101,14 +109,45 @@ export async function loadArtifacts(base) {
     throw new ArtifactError(`labels: ${labels.length} Werte, erwartet ${n}.`);
   }
 
+  // Der Textblock traegt Titel, Kuenstler, Datum und Link aller Punkte. Er wird
+  // fuer das erste Bild nicht gebraucht und deshalb nachgeladen — bei 100k
+  // Punkten sind das mehrere MB gegen 1,4 MB fuer alles Renderkritische.
+  const textEntry = files['text.bin'];
+  const offsetsEntry = files['text_offsets.u32.bin'];
+  let metadataPromise = null;
+  const loadMetadata = () => {
+    if (!facets || !textEntry || !offsetsEntry || !manifest.metadata?.facet_fields) {
+      return Promise.resolve(null);
+    }
+    metadataPromise ??= Promise.all([
+      fetchBinary(base, 'text.bin', textEntry.bytes),
+      fetchBinary(base, 'text_offsets.u32.bin', offsetsEntry.bytes),
+    ]).then(async ([textBuf, offsetBuf]) => {
+      const { Metadata } = await import('./metadata.js');
+      return new Metadata({
+        n,
+        fields: manifest.metadata.text_fields,
+        separator: manifest.metadata.field_separator,
+        facetFields: manifest.metadata.facet_fields,
+        facetValues: manifest.metadata.facet_values,
+        facets,
+        text: new Uint8Array(textBuf),
+        offsets: new Uint32Array(offsetBuf),
+      });
+    });
+    return metadataPromise;
+  };
+
   return {
     manifest,
     n,
     coords,
     colors,
     labels,
+    facets,
     labelNames: manifest.corpus.label_names ?? [],
     loadNeighbors,
+    loadMetadata,
     neighborsK: neighborEntry?.shape[1] ?? 0,
     dequant: { offset: manifest.coords.offset, half: manifest.coords.half },
     bounds: {

@@ -64,6 +64,14 @@ LABELS_FILE = "labels.u16.bin"
 NEIGHBORS_FILE = "neighbors.u32.bin"
 EMBEDDINGS_FILE = "embeddings.f32.npy"
 CORPUS_FILE = "corpus.parquet"
+FACETS_FILE = "facets.u8.bin"
+TEXT_FILE = "text.bin"
+TEXT_OFFSETS_FILE = "text_offsets.u32.bin"
+
+# Trennzeichen zwischen den Textfeldern eines Datensatzes. ASCII 31 (Unit
+# Separator) ist dafuer gedacht und kann in Museumsmetadaten nicht vorkommen —
+# anders als Semikolon, Pipe oder Tab, die alle in echten Titeln auftreten.
+FIELD_SEPARATOR = "\x1f"
 
 
 class ArtifactError(RuntimeError):
@@ -269,6 +277,7 @@ class Manifest:
     projection: dict[str, Any]
     coords: dict[str, Any]
     validation: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     files: list[dict[str, Any]] = field(default_factory=list)
     provenance: dict[str, Any] = field(default_factory=dict)
 
@@ -345,6 +354,7 @@ class ArtifactWriter:
         self._counts: dict[str, int] = {}
         self._coord_spec: CoordSpec | None = None
         self._label_names: list[str] = []
+        self._metadata: dict[str, Any] = {}
 
     # -- Bestandteile ----------------------------------------------------
 
@@ -395,6 +405,82 @@ class ArtifactWriter:
         entry = write_binary(self.dir / NEIGHBORS_FILE, neighbors, "<u4")
         self._files.append(entry)
         self._counts["neighbors"] = len(neighbors)
+
+    def add_metadata(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        facet_fields: list[str],
+        text_fields: list[str],
+    ) -> dict[str, Any]:
+        """Schreibt Facettenindizes und die Textfelder fuer das Detailpanel.
+
+        Zwei getrennte Formate, weil die Zugriffsmuster verschieden sind:
+
+        * **Facetten** werden bei jedem Filterklick ueber alle Punkte gelesen und
+          liegen deshalb als dichtes ``uint8``-Array vor — ein Index je Punkt
+          und Facette. Bei 100k Punkten und vier Facetten sind das 400 KB, die
+          der Browser ohne Parsen uebernimmt.
+        * **Text** wird immer nur fuer einen einzelnen Punkt gebraucht und liegt
+          deshalb als ein einziger UTF-8-Block mit Offsettabelle vor. 100.000
+          JSON-Objekte zu parsen kostet hunderte Millisekunden Hauptthread und
+          erzeugt 100.000 kurzlebige JS-Objekte; ein Block plus Offsets kostet
+          nichts und wird nachgeladen, nicht mitgeladen.
+        """
+        if len(facet_fields) > 255:
+            raise ArtifactError("Mehr als 255 Facetten sind nicht vorgesehen.")
+
+        # Facettenvokabulare: der Index in dieser Liste steht in der Binaerdatei.
+        vocabularies: dict[str, list[str]] = {}
+        for field in facet_fields:
+            values = sorted({str(row.get(field, "")) for row in rows})
+            if len(values) > 255:
+                raise ArtifactError(
+                    f"Facette {field!r} hat {len(values)} Werte — mehr als uint8 traegt. "
+                    "Im Korpusschritt kappen (siehe lse.corpus.cap_facet)."
+                )
+            vocabularies[field] = values
+
+        lookups = {
+            field: {value: index for index, value in enumerate(values)}
+            for field, values in vocabularies.items()
+        }
+        facet_matrix = np.array(
+            [[lookups[field][str(row.get(field, ""))] for field in facet_fields] for row in rows],
+            dtype=np.uint8,
+        ).reshape(len(rows), len(facet_fields))
+        self._files.append(write_binary(self.dir / FACETS_FILE, facet_matrix, "<u1"))
+
+        # Textblock plus Offsets. Die Offsets sind N+1 Eintraege, damit die
+        # Laenge des letzten Datensatzes ohne Sonderfall ableitbar ist.
+        blob = bytearray()
+        offsets = np.zeros(len(rows) + 1, dtype=np.uint32)
+        for index, row in enumerate(rows):
+            record = FIELD_SEPARATOR.join(str(row.get(field, "")) for field in text_fields)
+            blob.extend(record.encode("utf-8"))
+            offsets[index + 1] = len(blob)
+
+        text_path = self.dir / TEXT_FILE
+        text_path.write_bytes(bytes(blob))
+        self._files.append(
+            FileEntry(
+                name=TEXT_FILE,
+                dtype="utf-8",
+                shape=[len(rows)],
+                bytes=text_path.stat().st_size,
+                sha256=sha256_file(text_path),
+            )
+        )
+        self._files.append(write_binary(self.dir / TEXT_OFFSETS_FILE, offsets, "<u4"))
+
+        self._counts["facets"] = len(rows)
+        self._metadata = {
+            "facet_fields": list(facet_fields),
+            "facet_values": vocabularies,
+            "text_fields": list(text_fields),
+            "field_separator": FIELD_SEPARATOR,
+        }
+        return self._metadata
 
     def add_embeddings(self, embeddings: np.ndarray) -> None:
         """Hochdimensionale Embeddings als ``.npy``.
@@ -456,6 +542,7 @@ class ArtifactWriter:
             projection=projection or {},
             coords=coords_section,
             validation=validation or {},
+            metadata=self._metadata,
             files=[asdict(f) for f in self._files],
             provenance={
                 "git_commit": git_commit(self.config.root),
@@ -500,7 +587,10 @@ def verify(run_dir: Path) -> list[str]:
         shape = entry.get("shape") or []
         if entry["name"] == EMBEDDINGS_FILE:
             continue
-        if shape and shape[0] != manifest.n:
+        # Die Offsettabelle hat bewusst N+1 Eintraege: so ist die Laenge des
+        # letzten Datensatzes ohne Sonderfall ableitbar.
+        expected = manifest.n + 1 if entry["name"] == TEXT_OFFSETS_FILE else manifest.n
+        if shape and shape[0] != expected:
             problems.append(
                 f"{entry['name']}: {shape[0]} Zeilen, Manifest sagt n={manifest.n} "
                 "(ID-Invariante)"

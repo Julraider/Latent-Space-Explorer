@@ -92,6 +92,89 @@
         text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
       }
 
+      #controls {
+        position: fixed;
+        top: 130px;
+        left: 12px;
+        width: 232px;
+        display: grid;
+        gap: 10px;
+      }
+      #controls input[type='search'],
+      #controls select {
+        width: 100%;
+        padding: 5px 7px;
+        font: inherit;
+        color: var(--fg);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 4px;
+      }
+      #controls label {
+        display: grid;
+        gap: 3px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      #search-count {
+        color: var(--dim);
+        min-height: 1.5em;
+      }
+      #reset {
+        justify-self: start;
+        padding: 4px 9px;
+        font: inherit;
+        color: var(--dim);
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #reset:hover { color: var(--fg); }
+
+      #detail {
+        position: fixed;
+        bottom: 44px;
+        left: 12px;
+        width: 320px;
+        padding: 12px 14px;
+        background: rgba(14, 16, 22, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        border-radius: 6px;
+      }
+      #detail h2 {
+        margin: 0 0 8px;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+      #detail dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 2px 10px;
+        font-size: 11px;
+      }
+      #detail dt { color: var(--dim); }
+      #detail dd { margin: 0; overflow-wrap: anywhere; }
+      #detail a { color: #7fc4ff; }
+      #detail .close {
+        position: absolute;
+        top: 8px;
+        right: 10px;
+        color: var(--dim);
+        background: none;
+        border: 0;
+        font: inherit;
+        cursor: pointer;
+      }
+      #detail .neighbors {
+        margin-top: 9px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--dim);
+        font-size: 11px;
+      }
+
       #status {
         position: fixed;
         inset: 0;
@@ -120,8 +203,26 @@
 
     <div id="legend" hidden></div>
 
+    <div id="controls" hidden>
+      <label>
+        Titel durchsuchen
+        <input id="search" type="search" placeholder="z. B. Vase" autocomplete="off" />
+      </label>
+      <div id="search-count"></div>
+      <div id="filters"></div>
+      <button id="reset" type="button">Zurücksetzen</button>
+    </div>
+
+    <div id="detail" hidden>
+      <button class="close" type="button" aria-label="Schließen">✕</button>
+      <h2 id="detail-title"></h2>
+      <dl id="detail-fields"></dl>
+      <div class="neighbors" id="detail-neighbors"></div>
+    </div>
+
     <div id="help" hidden>
-      Ziehen = drehen &nbsp;·&nbsp; Rad = zoomen &nbsp;·&nbsp; Rechts ziehen = schwenken
+      Ziehen = drehen &nbsp;·&nbsp; Klick = auswählen &nbsp;·&nbsp; Doppelklick = hinfliegen
+      &nbsp;·&nbsp; Esc = Übersicht
     </div>
 
     <div id="warning" hidden></div>
