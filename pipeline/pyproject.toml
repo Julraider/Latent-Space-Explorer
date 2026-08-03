@@ -1,0 +1,64 @@
+[project]
+name = "lse"
+version = "0.1.0"
+description = "Latent Space Explorer — Embedding- und Projektions-Pipeline"
+# Kein readme-Feld: das README liegt im Repo-Wurzelverzeichnis, und hatchling
+# darf nicht ueber die Projektgrenze hinaus lesen.
+requires-python = ">=3.11"
+
+# Kern: alles, was fuer Datenvertrag, Projektion und Validierung noetig ist.
+# Bewusst ohne torch — das Embedding ist ein optionaler Schritt (siehe
+# docs/decisions.md E8), und ein 3-GB-Wheel im Kern macht jeden frischen Klon
+# und jede CI-Installation zaeh.
+dependencies = [
+    # Obergrenze ist KEINE Vorsicht, sondern eine harte Anforderung von numba
+    # (0.66.0 verlangt numpy<2.5), das ueber pynndescent unter umap-learn haengt.
+    # Ohne sie backtrackt der Resolver bis auf llvmlite 0.36 von 2021, das sich
+    # unter Python 3.11 nicht bauen laesst — mit einer Fehlermeldung, die kein
+    # Wort ueber numpy verliert. Erst anheben, wenn numba nachgezogen hat.
+    "numpy>=2.1,<2.5",
+    "pyarrow>=18",
+    "scikit-learn>=1.6",
+    "umap-learn>=0.5.9",
+]
+
+[project.optional-dependencies]
+# Modell-Inferenz. Lokal installieren; in der Entwicklungs-Session ist
+# huggingface.co gesperrt.
+embed = [
+    "torch>=2.6",
+    "transformers>=4.50",
+    "pillow>=11",
+    "httpx>=0.28",
+]
+# GPU-UMAP ist bewusst KEIN Extra: cuml liegt nicht auf PyPI, sondern auf
+# pypi.nvidia.com. Als Extra deklariert wuerde es die Aufloesung fuer jeden
+# frischen Klon blockieren — fuer einen optionalen Beschleuniger, der erst
+# oberhalb ~200k Punkten lohnt. Lokal bei Bedarf separat installieren:
+#
+#     uv pip install --extra-index-url https://pypi.nvidia.com cuml-cu12
+#
+# und den bestehenden Lauf ohne Codeaenderung darueber schicken:
+#
+#     python -m cuml.accel -m lse.cli project
+#
+# Ergebnisse sind dann nicht bit-identisch zu umap-learn, und random_state
+# verhaelt sich anders — fuer den veroeffentlichten Lauf also CPU-UMAP nehmen.
+
+[project.scripts]
+lse = "lse.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lse"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

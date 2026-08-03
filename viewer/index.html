@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Latent Space Explorer</title>
+    <!-- Inline, damit der Browser nicht bei jedem Laden vergeblich nach
+         /favicon.ico fragt und die Konsole mit einem 404 verunreinigt. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='5' cy='6' r='2.4' fill='%23e69f00'/%3E%3Ccircle cx='11' cy='5' r='2' fill='%23009e73'/%3E%3Ccircle cx='9' cy='11' r='2.6' fill='%2356b4e9'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07080c;
+        --fg: #e8e9ee;
+        --dim: #868a99;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        overflow: hidden;
+      }
+      canvas { display: block; }
+
+      #hud {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        pointer-events: none;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+      }
+      #hud h1 {
+        margin: 0 0 6px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+      #hud dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 0 12px;
+        color: var(--dim);
+      }
+      #hud dt { color: var(--dim); }
+      #hud dd { margin: 0; color: var(--fg); }
+
+      #help {
+        position: fixed;
+        bottom: 12px;
+        left: 12px;
+        color: var(--dim);
+        pointer-events: none;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+      }
+
+      #status {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        text-align: center;
+        gap: 8px;
+        background: var(--bg);
+        transition: opacity 240ms ease;
+      }
+      #status.hidden { opacity: 0; pointer-events: none; }
+      #status .detail { color: var(--dim); max-width: 46ch; }
+      #status.error .headline { color: #ff8f6b; }
+    </style>
+  </head>
+  <body>
+    <div id="hud" hidden>
+      <h1>Latent Space Explorer</h1>
+      <dl>
+        <dt>Punkte</dt><dd id="stat-points">—</dd>
+        <dt>Backend</dt><dd id="stat-backend">—</dd>
+        <dt>Frame</dt><dd id="stat-frame">—</dd>
+        <dt>Draw Calls</dt><dd id="stat-draws">—</dd>
+      </dl>
+    </div>
+
+    <div id="help" hidden>
+      Ziehen = drehen &nbsp;·&nbsp; Rad = zoomen &nbsp;·&nbsp; Rechts ziehen = schwenken
+    </div>
+
+    <div id="status">
+      <div class="headline">Lade Artefakte …</div>
+      <div class="detail" id="status-detail">data/sample</div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

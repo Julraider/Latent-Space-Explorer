@@ -1,0 +1,99 @@
+# Latent Space Explorer — zentrale Konfiguration.
+#
+# Einzige Wahrheitsquelle für Korpus, Modell, Projektion und Artefaktformate.
+# Keine harten Pfade im Code; jedes Ausgabeverzeichnis wird mit der Config
+# gestempelt, die es erzeugt hat (siehe manifest.json).
+#
+# Bewusst klein gehalten: sechs Abschnitte, kein Plugin-System. Siehe Anti-Ziele
+# im README.
+
+schema_version = 1
+
+
+[corpus]
+id = "met-open-access"
+# Die vollständigen Metadaten. Erreichbar ohne API-Key und ohne git-lfs-Client.
+metadata_url = "https://media.githubusercontent.com/media/metmuseum/openaccess/master/MetObjects.csv"
+# Bild-URLs kommen aus der Objekt-API; in der Entwicklungs-Session gesperrt (siehe docs/decisions.md E8).
+object_api = "https://collectionapi.metmuseum.org/public/collection/v1/objects"
+target_n = 100_000
+require_public_domain = true
+require_image = true
+# Facetten werden zu Filtern im Viewer. Bewusst vier, nicht beliebig viele.
+facets = ["department", "culture", "period", "medium"]
+# Farbkanal und Validierungslabel. Muss eine Spalte mit wenigen, klar
+# getrennten Werten sein, sonst ist das Go/No-Go-Tor in Phase 0b wertlos.
+label_field = "department"
+
+
+[model]
+# SigLIP 2: geteilter Bild-Text-Raum, Voraussetzung für den Live-Prompt (E4).
+# Vor dem Lauf in Zielgröße auf einen Revision-SHA pinnen, nicht "main".
+id = "google/siglip2-base-patch16-224"
+revision = "main"
+dim = 768
+batch_size = 256
+dtype = "float16"
+# Anzahl Dataloader-Worker; der Engpass ist JPEG-Dekodierung, nicht die GPU.
+num_workers = 8
+
+
+[projection]
+# Reihenfolge ist bindend: L2 -> PCA -> UMAP mit euclidean.
+# Auf normalisierten Vektoren ist cosine monoton aequivalent, und euclidean ist
+# der schnellere, besser getestete Pfad.
+l2_normalize = true
+pca_components = 50
+umap_n_components = 3
+# 30-50 statt der 2D-Vorgabe 15: niedrige Werte erzeugen in 3D fadenartige
+# Filamente, die beim Durchfliegen wie Rauschen wirken.
+umap_n_neighbors = 40
+# Der wichtigste aesthetische Regler. Hoch -> gleichmaessiger Nebel ohne
+# Struktur; niedrig -> dichte Cluster mit echten Leerraeumen dazwischen.
+umap_min_dist = 0.05
+umap_metric = "euclidean"
+umap_init = "pca"
+umap_n_epochs = 500
+# MUSS false bleiben: densMAP und umap.transform() schliessen sich aus
+# (umap_.py:3087). Siehe docs/decisions.md E4.
+umap_densmap = false
+# Seed nur fuer den veroeffentlichten Lauf. random_state erzwingt n_jobs=1 quer
+# durch kNN-Bau und Layout -> Faktor 3-6 Wall-Clock. Beim Explorieren auf
+# null setzen.
+random_state = 20260803
+
+
+[validation]
+# Go/No-Go-Tor, Phase 0b. Siehe docs/decisions.md E6.
+knn_k = 15
+knn_sample_size = 10_000
+# Unterhalb dessen ist die Projektion Dekoration, nicht Abbildung.
+min_knn_overlap = 0.05
+# Shuffle-Control: dieselbe Pipeline auf gemischten Embeddings als Baseline.
+run_shuffle_control = true
+
+
+[artifacts]
+dir = "data/runs"
+sample_dir = "data/sample"
+# Koordinaten werden in diese Box normalisiert. Ohne das aendert jeder
+# UMAP-Neulauf den Massstab und entwertet still jede Kamerakonstante,
+# Nebeldichte und Punktgroesse.
+coord_box = 50.0
+# int16 statt float32: 600 KB statt 1,2 MB bei 100k, Aufloesung ~0,0003
+# Einheiten. UMAP-Koordinaten sind nicht auf vier Nachkommastellen bedeutsam.
+quantize_coords = true
+# Echte Nachbarn im HOCHDIMENSIONALEN Raum, vorberechnet. Traegt die
+# Ehrlichkeitsschicht und "mehr wie dieses" ohne Server.
+neighbors_k = 20
+
+
+[viewer]
+# Deckelt die Bildschirmgroesse eines Punktes. Behebt den einen Fehlermodus,
+# der das Ruckeln verursacht: nahe Punkte in einem Cluster.
+max_point_px = 48.0
+# ~1,8x Performance auf Retina fuer einen Unterschied, den bei weichen runden
+# Sprites niemand sieht.
+max_pixel_ratio = 1.5
+# Punkte pro Frame-Budget-Pruefung; 60 fps auf der Zielhardware.
+target_fps = 60

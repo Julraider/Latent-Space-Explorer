@@ -1,0 +1,32 @@
+# Artefakte. Gross, binaer, regenerierbar — und bewusst KEIN git-lfs:
+# das kostet Quota und macht das Repo klon-feindlich. Ausgeliefert wird ueber
+# Release-Assets, regeneriert wird mit einem dokumentierten Befehl.
+/data/*
+
+# Ausnahme, und die wichtigste Zeile in dieser Datei: 1.000 Punkte sind
+# eingecheckt, damit ein frischer Klon mit `npm run dev` und null Python sofort
+# etwas rendert.
+!/data/sample/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# Werkzeuge
+.DS_Store
+.idea/
+.vscode/
+*.swp
