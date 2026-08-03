@@ -19,11 +19,21 @@ object_api = "https://collectionapi.metmuseum.org/public/collection/v1/objects"
 target_n = 100_000
 require_public_domain = true
 require_image = true
-# Facetten werden zu Filtern im Viewer. Bewusst vier, nicht beliebig viele.
-facets = ["department", "culture", "period", "medium"]
+# Facetten werden zu Filtern im Viewer. Bewusst vier, nicht beliebig viele,
+# und gemessen ausgewaehlt (siehe lse/corpus.py FACETS). `medium` steht
+# bewusst NICHT hier: 37.876 verschiedene Werte ueber die gemeinfreie Sammlung,
+# Top-8 deckt nur 26 % — als Filter wertlos. Es bleibt als Detailfeld erhalten.
+facets = ["department", "classification", "culture", "period"]
+# Obergrenze je Facette; alles darueber wird zu "Andere" zusammengefasst.
+facet_cap = 16
 # Farbkanal und Validierungslabel. Muss eine Spalte mit wenigen, klar
 # getrennten Werten sein, sonst ist das Go/No-Go-Tor in Phase 0b wertlos.
+# 19 Abteilungen; fuer die Darstellung auf 8 Farbgruppen reduziert, fuer die
+# Validierung in voller Aufloesung verwendet.
 label_field = "department"
+# Klassen unter dieser Groesse fallen aus der Stichprobe: eine Handvoll Punkte
+# bildet keinen erkennbaren Cluster, verbraucht aber einen Palettenplatz.
+min_class_size = 20
 
 
 [model]

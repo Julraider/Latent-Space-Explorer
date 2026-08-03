@@ -29,16 +29,42 @@ const BACKGROUND = new Color(0x07080c);
 // Unterschied, den bei weichen runden Sprites niemand sieht.
 const MAX_PIXEL_RATIO = 1.5;
 
+// Muss zu PALETTE in pipeline/src/lse/synthetic.py passen. Die Farben stehen
+// bereits pro Punkt in colors.u8.bin — die Legende braucht sie zusaetzlich, um
+// Labelnamen zuzuordnen, ohne die Punktdaten zurueckzulesen.
+const PALETTE = [
+  [230, 159, 0], [86, 180, 233], [0, 158, 115], [240, 228, 66],
+  [0, 114, 178], [213, 94, 0], [204, 121, 167], [148, 103, 189],
+];
+
 const ui = {
   status: document.getElementById('status'),
   statusDetail: document.getElementById('status-detail'),
   hud: document.getElementById('hud'),
   help: document.getElementById('help'),
+  legend: document.getElementById('legend'),
+  warning: document.getElementById('warning'),
   points: document.getElementById('stat-points'),
   backend: document.getElementById('stat-backend'),
   frame: document.getElementById('stat-frame'),
   draws: document.getElementById('stat-draws'),
 };
+
+function renderLegend(labelNames) {
+  if (!labelNames.length) return;
+  ui.legend.replaceChildren(
+    ...labelNames.map((name, index) => {
+      const row = document.createElement('div');
+      const swatch = document.createElement('i');
+      swatch.style.background = `rgb(${PALETTE[index % PALETTE.length].join(',')})`;
+      const text = document.createElement('span');
+      text.textContent = name;
+      row.append(swatch, text);
+      return row;
+    }),
+  );
+  ui.legend.hidden = false;
+}
 
 function fail(headline, detail) {
   ui.status.classList.remove('hidden');
@@ -119,8 +145,20 @@ async function main() {
 
   ui.points.textContent = data.n.toLocaleString('de-DE');
   ui.backend.textContent = renderer.backend?.isWebGPUBackend ? 'WebGPU' : 'WebGL2 (Fallback)';
+  renderLegend(data.labelNames);
   ui.hud.hidden = false;
   ui.help.hidden = false;
+
+  // Platzhalter-Geometrie muss im Bild sichtbar sein, nicht nur im Manifest.
+  // Ein Raum, der aussieht wie ein Ergebnis, aber keines ist, waere sonst genau
+  // die Illusion, gegen die das Go/No-Go-Tor gebaut wurde.
+  if (data.manifest.projection?.placeholder_embeddings) {
+    ui.warning.textContent =
+      'Platzhalter-Embeddings: die Metadaten sind echt, die Anordnung im Raum ' +
+      'bedeutet nichts. Erst `lse embed` liefert eine echte Geometrie.';
+    ui.warning.hidden = false;
+  }
+
   ui.status.classList.add('hidden');
 
   function resize() {

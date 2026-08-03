@@ -20,6 +20,10 @@ dependencies = [
     "pyarrow>=18",
     "scikit-learn>=1.6",
     "umap-learn>=0.5.9",
+    # Kein optionales Extra: der Kontrollplot ist Teil des Go/No-Go-Tors, nicht
+    # Zierde. Ein Tor, dessen Ausgabe man erst nachinstallieren muss, wird
+    # uebersprungen.
+    "matplotlib>=3.9",
 ]
 
 [project.optional-dependencies]

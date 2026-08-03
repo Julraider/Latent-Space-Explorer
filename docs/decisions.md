@@ -177,6 +177,64 @@ Regenerierung ist ein dokumentierter Befehl. Ausnahme: `data/sample/` mit 1.000 
 
 ---
 
+## E9 — Facetten gemessen statt geraten; `medium` verworfen
+
+**Entschieden:** Die Facetten sind `department`, `classification`, `culture`, `period`. Jede wird auf
+16 Werte plus „Andere" gekappt.
+
+**Grundlage** — Auszählung über alle 248.472 gemeinfreien Objekte:
+
+| Feld | verschiedene Werte | Top-8 deckt |
+|---|---|---|
+| `department` | 19 | 83 % |
+| `classification` | 693 | 60 % |
+| `culture` | 5.242 | 71 % (davon 42 % „unbekannt") |
+| `medium` | **37.876** | **26 %** |
+
+`medium` war im ersten Entwurf als Facette vorgesehen und ist verworfen: Werte wie
+„Stone, probably jet; incised" sind zu fein, um zu filtern. Es bleibt als Detailfeld erhalten.
+`period` wird nicht aus dem gleichnamigen Freitextfeld gebildet, sondern aus den numerischen
+Datumsfeldern zu Jahrhunderten gebündelt — die Textspalte reicht von „Edo period (1615–1868)" bis
+leer, die Zahlenspalten sind fast durchgängig gesetzt.
+
+---
+
+## E10 — Klassenzahl vor dem Ziehen begrenzen, nicht danach gruppieren
+
+**Entschieden:** Die Stichprobe wird auf die acht größten Labelklassen beschränkt, **bevor**
+geschichtet gezogen wird. Klassen unter 20 Elementen fallen vorher weg.
+
+**Der erste Entwurf machte es umgekehrt** — alle 19 Abteilungen ziehen, dann die größten sieben
+einfärben und den Rest zu „Andere" zusammenfassen. Das Ergebnis war unbrauchbar: die geschichtete
+Stichprobe macht alle Klassen ungefähr gleich groß, danach ist „die größten sieben" eine
+Zufallsauswahl, und die übrigen zwölf landeten als **676 von 1.000 Punkten** in einem einzigen
+grauen Sammeltopf. Zwei Drittel der Wolke in einer Farbe sind weder ein Farbkanal noch ein Testfall.
+
+Vorher zu begrenzen löst beides auf einmal: das Label ist zugleich Farbkanal und Wahrheitsgrundlage
+des Go/No-Go-Tors, mit acht ausgewogenen, visuell verschiedenen Klassen — exakt die Palettengröße.
+Die acht größten Abteilungen decken 83 % der gemeinfreien Sammlung ab.
+
+**Folgeregel: das Label wird nie gekappt.** Das Facetten-Kappen (E9) überspringt das Labelfeld. Es
+auch dort anzuwenden hatte im ersten Entwurf die 19 Abteilungen auf 17 reduziert — und damit die
+Wahrheitsgrundlage des Tors verändert, gegen die validiert wird.
+
+---
+
+## E11 — Der Shuffle-Control mischt Spalten, nicht Zeilen
+
+**Entschieden:** Die Kontrolle permutiert jede Dimension unabhängig über alle Zeilen.
+
+**Zeilen zu mischen wäre wirkungslos** — es ist dieselbe Punktmenge in anderer Reihenfolge, UMAP
+fände exakt dieselbe Mannigfaltigkeit, und die „Kontrolle" sähe genauso gut aus wie die echten
+Daten. Die Kontrolle muss die Korrelationen *zwischen* den Dimensionen auflösen. Eine unabhängige
+Permutation je Spalte tut genau das: jede Dimension behält ihre Verteilung, aber kein Punkt ist mehr
+eine sinnvolle Kombination.
+
+Gemessen (synthetische Blobs, dim=32, k=10): Label-Reinheit 0,99 im Original, 0,99 nach
+Zeilenpermutation, 0,31 nach Spaltenpermutation. Der Test hält das fest.
+
+---
+
 ## E8 — Egress-Beschränkung der Entwicklungsumgebung
 
 **Festgestellt am 2026-08-03, keine Entscheidung sondern eine Randbedingung.**

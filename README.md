@@ -5,10 +5,11 @@ Bild-Text-Modell geschickt, die Embeddings auf drei Dimensionen reduziert und im
 dargestellt, durch die man sich bewegt. Ähnliches liegt nah beieinander. Man tippt eine Phrase, und
 sie landet an der Stelle, an die sie gehört.
 
-**Status:** Phase 0a abgeschlossen — Gerüst, Datenvertrag und Renderer stehen und sind verifiziert.
-Der Korpus ist noch synthetisch; echte Met-Daten kommen in Phase 0b.
+**Status:** Phase 0b — die Pipeline läuft von der Met-CSV bis in den Browser. Es fehlt genau ein
+Schritt: die Bilder und das Modell, beides gesperrt in der Entwicklungsumgebung
+(siehe [Lokal ausführen](#lokal-ausführen)).
 
-![1.000 synthetische Punkte im Viewer](docs/img/phase0a-1k.png)
+![1.000 echte Met-Objekte im Viewer, mit Platzhalter-Geometrie](docs/img/phase0b-placeholder.png)
 
 ---
 
@@ -68,6 +69,51 @@ uv run --project pipeline pytest
 
 ---
 
+## Lokal ausführen
+
+Die Pipeline hat fünf Schritte. Drei laufen überall, zwei brauchen Hosts, die in der
+Entwicklungsumgebung durch eine Egress-Richtlinie gesperrt sind:
+
+```bash
+uv run --project pipeline lse fetch --n 1000   # Met-CSV -> gefilterte Auswahl
+uv run --project pipeline lse images           # braucht images.metmuseum.org
+uv run --project pipeline lse embed            # braucht huggingface.co + GPU
+uv run --project pipeline lse project          # Projektion + Go/No-Go-Tor
+uv run --project pipeline lse verify data/runs/dev
+```
+
+Für `embed` zusätzlich die Modellabhängigkeiten installieren:
+
+```bash
+uv sync --project pipeline --extra embed
+```
+
+`images` und `embed` sind beide **wiederaufnehmbar**: ein Abbruch kostet höchstens den laufenden
+Batch. `images` führt ein `done.jsonl`, `embed` schreibt Shards.
+
+Ohne diese beiden Schritte funktioniert alles andere trotzdem — `lse project --placeholder` baut
+einen Raum aus echten Metadaten und **bedeutungsloser Geometrie**, klar markiert im Manifest und
+sichtbar im Viewer. Das ist die Grundlage, auf der die Interaktion gebaut wird, nicht ein Ergebnis.
+
+### Das Go/No-Go-Tor
+
+`lse project` entscheidet, ob der Raum etwas bedeutet, und schreibt `gate.png` und `gate.json`.
+Nachfolgend der Lauf mit **Platzhalter-Embeddings** — er ist durchgefallen, und genau das belegt,
+dass das Tor funktioniert:
+
+![Go/No-Go-Tor mit Platzhalter-Embeddings](docs/img/phase0b-gate.png)
+
+Links acht makellose Cluster — jeder davon ein Gemisch aus allen acht Abteilungen. kNN-Overlap 0,246
+und Trustworthiness 0,957 sehen beide hervorragend aus. Die Label-Reinheit in 3D liegt aber bei
+**0,126 gegen ein Zufallsniveau von 0,125**: die Cluster existieren, sie bedeuten nur nichts. Ein
+Blick auf den Plot allein hätte „sieht super aus" gesagt.
+
+Rechts der Shuffle-Control. Er permutiert **jede Dimension unabhängig**, nicht die Zeilen — Zeilen zu
+mischen ergäbe dieselbe Punktmenge in anderer Reihenfolge, und UMAP fände exakt dieselbe
+Mannigfaltigkeit.
+
+---
+
 ## Wie es gebaut wird
 
 In Phasen, jede mit einem Ausstiegskriterium. Der vollständige Plan steht in
@@ -76,7 +122,7 @@ In Phasen, jede mit einem Ausstiegskriterium. Der vollständige Plan steht in
 | Phase | Inhalt | Fertig, wenn … |
 |---|---|---|
 | **0a** | Entscheiden und Gerüst | `uv run` und `npm run dev` starten auf frischem Klon sauber ✅ |
-| **0b** | Walking Skeleton, N = 1.000 | 1.000 echte Punkte im Browser, und das Go/No-Go-Tor ist grün |
+| **0b** | Walking Skeleton, N = 1.000 | 1.000 echte Punkte im Browser ✅, Tor grün ⏳ (braucht `lse embed`) |
 | **1** | Embeddings in Zielgröße | N Embeddings mit Manifest, Lauf nach `kill -9` wiederaufnehmbar |
 | **2** | Projektion + Transform-Entscheidung | Koordinaten normalisiert, kNN-Overlap gemessen |
 | **3** | Renderer in Zielgröße | Voller Korpus bei 60 fps, Sample rendert ohne Python |
