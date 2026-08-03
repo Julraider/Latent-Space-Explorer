@@ -114,6 +114,24 @@ Mannigfaltigkeit.
 
 ---
 
+## Die Ehrlichkeitsschicht
+
+UMAP-Abstände sind nicht bedeutsam. Nur lokale Nachbarschaften sind es, und selbst die werden
+verzerrt. Ein Raum, der so tut, als wäre Nähe im Bild gleich Nähe im Modell, lügt — nur eben hübsch.
+
+Deshalb verbindet jede Auswahl die **echten hochdimensionalen** Nachbarn des Punktes, vorberechnet in
+der Pipeline. Wo eine Linie quer durch die Wolke läuft, sieht man unmittelbar, was die Projektion
+weggeworfen hat:
+
+![Nachbarschaftslinien](docs/img/phase4-neighbor-lines.png)
+
+Das Detailpanel nennt die Zahl dazu — den Abstand des entferntesten echten Nachbarn, gemessen am
+Wolkenradius. Liegt er hoch, hat die Projektion Punkte auseinandergerissen, die im Modell benachbart
+sind. Das kostet einen Build-Schritt und ein `LineSegments`, und es ist der einzige Teil der
+Darstellung, der etwas zeigt, das ein Standard-Scatterplot nicht kann.
+
+---
+
 ## Wie es gebaut wird
 
 In Phasen, jede mit einem Ausstiegskriterium. Der vollständige Plan steht in

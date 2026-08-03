@@ -23,12 +23,16 @@ import { NearestFilter, RenderTarget, Vector4 } from 'three/webgpu';
 // exakt treffen.
 const REGION = 11;
 
+/** Anfrage verworfen, weil bereits eine laeuft — NICHT "nichts getroffen". */
+export const PICK_BUSY = null;
+
 export class Picker {
-  constructor(renderer, scene, camera, cloud) {
+  constructor(renderer, scene, camera, cloud, count) {
     this.renderer = renderer;
     this.scene = scene;
     this.camera = camera;
     this.cloud = cloud;
+    this.count = count;
 
     this.target = new RenderTarget(REGION, REGION);
     this.target.texture.minFilter = NearestFilter;
@@ -40,15 +44,19 @@ export class Picker {
   }
 
   /**
-   * Liefert den Punktindex unter (x, y) in CSS-Pixeln, oder -1.
+   * Liefert den Punktindex unter (x, y) in CSS-Pixeln.
+   *
+   * Rueckgabe: Index, `-1` fuer Hintergrund, oder `PICK_BUSY`, wenn bereits
+   * eine Anfrage laeuft. Der Unterschied zwischen den letzten beiden ist
+   * wesentlich — ein Doppelklick loest drei ueberlappende Anfragen aus, und
+   * "verworfen" als "nichts getroffen" zu behandeln loescht die gerade
+   * getroffene Auswahl wieder.
    *
    * Asynchron: `readRenderTargetPixelsAsync` vermeidet den synchronen Stall,
    * der beim Hover sonst permanent auf die GPU wartet und die Bildrate halbiert.
-   * Ueberlappende Aufrufe werden verworfen statt eingereiht — beim Hover ist
-   * die neueste Position die einzige, die zaehlt.
    */
   async pick(x, y) {
-    if (this._busy) return -1;
+    if (this._busy) return PICK_BUSY;
     this._busy = true;
     try {
       const { renderer, camera, cloud, scene } = this;
@@ -75,6 +83,21 @@ export class Picker {
       const previousFog = scene.fog;
       scene.fog = null;
 
+      // ALLES ausser der Punktwolke ausblenden.
+      //
+      // Nicht optional: jedes andere Objekt zeichnet seine eigene Farbe in den
+      // ID-Puffer, und die wird beim Dekodieren zu einer Punktnummer. Die
+      // Nachbarschaftslinien liegen zudem mit `depthTest: false` ueber allem —
+      // sobald einmal etwas ausgewaehlt war, lieferte jeder weitere Klick
+      // dadurch eine Fantasie-ID (beobachtet: 11.965.604 bei 1.000 Punkten).
+      const hidden = [];
+      scene.traverse((object) => {
+        if (object !== cloud && object.isObject3D && object.visible && object.material) {
+          hidden.push(object);
+          object.visible = false;
+        }
+      });
+
       renderer.setRenderTarget(this.target);
       renderer.setClearColor(0x000000, 0);
       renderer.clear();
@@ -88,9 +111,10 @@ export class Picker {
       cloud.material = previousMaterial;
       scene.background = previousBackground;
       scene.fog = previousFog;
+      for (const object of hidden) object.visible = true;
       camera.clearViewOffset();
 
-      return decodeNearest(pixels, REGION);
+      return decodeNearest(pixels, REGION, this.count);
     } finally {
       this._busy = false;
     }
@@ -107,7 +131,7 @@ export class Picker {
  * Nicht einfach das mittlere Pixel: bei duennen Punkten trifft man sonst fast
  * immer den Hintergrund, und der Klick fuehlt sich kaputt an.
  */
-function decodeNearest(pixels, region) {
+function decodeNearest(pixels, region, count) {
   const center = (region - 1) / 2;
   let best = -1;
   let bestDistance = Infinity;
@@ -117,6 +141,10 @@ function decodeNearest(pixels, region) {
       const offset = (row * region + column) * 4;
       const id = pixels[offset] | (pixels[offset + 1] << 8) | (pixels[offset + 2] << 16);
       if (id === 0) continue; // Hintergrund
+      // Bereichspruefung als zweite Verteidigungslinie: sollte je wieder ein
+      // fremdes Material in den ID-Puffer zeichnen, wird seine Farbe hier
+      // verworfen statt als Punktnummer weitergereicht.
+      if (count !== undefined && id > count) continue;
 
       // Die Textur steht gegenueber den Fensterkoordinaten auf dem Kopf; fuer
       // die Distanz zur Mitte ist das egal, fuer die Symmetrie nicht.

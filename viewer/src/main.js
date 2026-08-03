@@ -11,7 +11,8 @@ import { Color, FogExp2, PerspectiveCamera, Scene, Vector2, Vector3, WebGPURende
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import { loadArtifacts } from './artifacts.js';
-import { Picker } from './picking.js';
+import { createNeighborLines } from './neighborLines.js';
+import { PICK_BUSY, Picker } from './picking.js';
 import {
   FLAG_MATCH,
   FLAG_NEIGHBOR,
@@ -19,6 +20,7 @@ import {
   FLAG_VISIBLE,
   createPointCloud,
 } from './pointCloud.js';
+import * as urlState from './urlState.js';
 
 const params = new URLSearchParams(location.search);
 const DATASET = params.get('data') ?? '/data/sample';
@@ -154,7 +156,10 @@ async function main() {
   controls.minDistance = radius * 0.05;
   controls.maxDistance = radius * 4;
 
-  const picker = new Picker(renderer, scene, camera, cloud);
+  const picker = new Picker(renderer, scene, camera, cloud, data.n);
+
+  const neighborLines = createNeighborLines(data.neighborsK || 20, radius);
+  scene.add(neighborLines);
 
   // ---------------------------------------------------------------------
   // Kamerafahrt
@@ -218,6 +223,16 @@ async function main() {
   let selected = -1;
   const activeFilters = new Map(); // Facettenname -> Wertindex, -1 = alle
 
+  const syncUrl = urlState.debounce(() =>
+    urlState.write({
+      camera: camera.position,
+      target: controls.target,
+      selected,
+      query: ui.search.value,
+      filters: Object.fromEntries(activeFilters),
+    }),
+  );
+
   function setFlag(index, bit, on) {
     if (on) cloud.flags[index] |= bit;
     else cloud.flags[index] &= ~bit;
@@ -248,6 +263,7 @@ async function main() {
       setFlag(i, FLAG_VISIBLE, visible);
     }
     cloud.commitFlags();
+    syncUrl();
   }
 
   function runSearch(query) {
@@ -256,6 +272,7 @@ async function main() {
       cloud.uniforms.searchActive.value = 0;
       ui['search-count'].textContent = '';
       cloud.commitFlags();
+      syncUrl();
       return;
     }
     const hits = metadata.search(query.trim());
@@ -266,6 +283,7 @@ async function main() {
         ? 'keine Treffer'
         : `${hits.length.toLocaleString('de-DE')} Treffer`;
     cloud.commitFlags();
+    syncUrl();
 
     // Zum ersten Treffer fliegen: sonst "findet" die Suche Punkte tief in der
     // Wolke, und man sieht drei davon.
@@ -281,7 +299,9 @@ async function main() {
 
     if (index < 0) {
       cloud.commitFlags();
+      neighborLines.clear();
       ui.detail.hidden = true;
+      syncUrl();
       return;
     }
     setFlag(index, FLAG_SELECTED, true);
@@ -290,18 +310,30 @@ async function main() {
     // Genau die Abweichung zwischen beidem ist die Aussage: wo ein Nachbar auf
     // der gegenueberliegenden Seite landet, sieht man die Projektionsverzerrung.
     neighbors ??= await data.loadNeighbors();
+    let farthest = 0;
     if (neighbors) {
       const k = data.neighborsK;
+      const origin = pointPosition(index, new Vector3());
+      const targets = [];
       for (let j = 0; j < k; j++) {
         const neighbor = neighbors[index * k + j];
-        if (neighbor < data.n) setFlag(neighbor, FLAG_NEIGHBOR, true);
+        if (neighbor >= data.n) continue;
+        setFlag(neighbor, FLAG_NEIGHBOR, true);
+        const position = pointPosition(neighbor, new Vector3());
+        farthest = Math.max(farthest, origin.distanceTo(position));
+        targets.push(position.toArray());
       }
+      neighborLines.setNeighbors(origin.toArray(), targets);
     }
     cloud.commitFlags();
-    showDetail(index);
+    showDetail(index, farthest);
+    syncUrl();
   }
 
-  function showDetail(index) {
+  function showDetail(index, farthestNeighbor = 0) {
+    // Der Index steht im DOM: er ist die ID des Punktes, und ohne ihn ist jeder
+    // Fehlerbericht ueber "das falsche Objekt" nicht nachvollziehbar.
+    ui.detail.dataset.index = String(index);
     const record = metadata?.record(index);
     ui['detail-title'].textContent = record?.title || `Punkt ${index}`;
 
@@ -349,10 +381,22 @@ async function main() {
       }),
     );
 
-    ui['detail-neighbors'].textContent = neighbors
-      ? `${data.neighborsK} nächste Nachbarn im hochdimensionalen Raum hervorgehoben — `
-        + 'wo sie weit auseinanderliegen, zeigt sich die Verzerrung der Projektion.'
-      : '';
+    if (neighbors) {
+      // Der entfernteste echte Nachbar, gemessen am Wolkenradius. Genau diese
+      // Zahl ist die Aussage: liegt sie hoch, hat die Projektion Punkte
+      // auseinandergerissen, die im Modell benachbart sind.
+      const spread = farthestNeighbor / radius;
+      const verdict =
+        spread > 0.6
+          ? 'Ein Teil davon liegt quer im Raum — dort hat die Projektion Nachbarschaft verloren.'
+          : 'Sie liegen alle nah beieinander — hier bildet die Projektion gut ab.';
+      ui['detail-neighbors'].textContent =
+        `${data.neighborsK} nächste Nachbarn im hochdimensionalen Raum, verbunden. `
+        + `Der entfernteste liegt bei ${(spread * 100).toFixed(0)} % des Wolkenradius. `
+        + verdict;
+    } else {
+      ui['detail-neighbors'].textContent = '';
+    }
     ui.detail.hidden = false;
   }
 
@@ -402,12 +446,16 @@ async function main() {
 
     const rect = renderer.domElement.getBoundingClientRect();
     const index = await picker.pick(event.clientX - rect.left, event.clientY - rect.top);
+    // Verworfene Anfragen ignorieren, nicht als "nichts getroffen" behandeln:
+    // ein Doppelklick loest drei ueberlappende Anfragen aus.
+    if (index === PICK_BUSY) return;
     await select(index);
   });
 
   renderer.domElement.addEventListener('dblclick', async (event) => {
     const rect = renderer.domElement.getBoundingClientRect();
     const index = await picker.pick(event.clientX - rect.left, event.clientY - rect.top);
+    if (index === PICK_BUSY) return;
     if (index < 0) {
       overview();
       return;
@@ -466,12 +514,42 @@ async function main() {
   ui.status.classList.add('hidden');
 
   // Metadaten nachladen, ohne das erste Bild aufzuhalten.
+  const restored = urlState.read();
   data.loadMetadata().then((loaded) => {
     if (!loaded) return;
     metadata = loaded;
     buildFilterUI();
     ui.controls.hidden = false;
+
+    // Zustand aus der URL erst hier anwenden: Filter und Suche brauchen die
+    // Metadaten, und eine halb angewandte Ansicht waere schlimmer als keine.
+    if (!restored) return;
+    if (restored.filters) {
+      for (const [field, value] of Object.entries(restored.filters)) {
+        activeFilters.set(field, value);
+        const dropdown = [...ui.filters.querySelectorAll('select')][
+          metadata.facetFields.indexOf(field)
+        ];
+        if (dropdown) dropdown.value = String(value);
+      }
+      applyFilters();
+    }
+    if (restored.query) {
+      ui.search.value = restored.query;
+      runSearch(restored.query);
+    }
+    if (restored.selected >= 0 && restored.selected < data.n) {
+      select(restored.selected);
+    }
   });
+
+  // Kamera dagegen sofort, damit kein sichtbarer Sprung entsteht.
+  if (restored?.camera && restored?.target) {
+    camera.position.fromArray(restored.camera);
+    controls.target.fromArray(restored.target);
+    controls.update();
+  }
+  controls.addEventListener('change', syncUrl);
 
   function resize() {
     const { innerWidth: w, innerHeight: h } = window;
