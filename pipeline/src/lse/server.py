@@ -76,15 +76,6 @@ class PromptService:
         self.manifest = manifest
         self.n = manifest.n
 
-        embeddings_path = self.run_dir / artifacts.EMBEDDINGS_FILE
-        if not embeddings_path.is_file():
-            raise FileNotFoundError(
-                f"{embeddings_path} fehlt. Der Dienst braucht die hochdimensionalen "
-                "Embeddings — mit `lse project --keep-embeddings` erzeugen."
-            )
-        self.embeddings = placement.l2_normalize(np.load(embeddings_path))
-        self.dim = int(self.embeddings.shape[1])
-
         stride = manifest.coords["coord_stride"]
         raw = artifacts.read_binary(
             self.run_dir / artifacts.COORDS_FILE, "<i2", (self.n, stride)
@@ -103,6 +94,30 @@ class PromptService:
         self.radius = float(spec.radius)
 
         self.is_stub = encoder is None
+        embeddings_path = self.run_dir / artifacts.EMBEDDINGS_FILE
+
+        if embeddings_path.is_file():
+            self.embeddings = placement.l2_normalize(np.load(embeddings_path))
+            self.space = "embeddings"
+        elif self.is_stub:
+            # Ohne Embedding-Datei, aber im Stub-Modus: die 3D-Koordinaten
+            # selbst als Suchraum nehmen.
+            #
+            # Das ist keine Notluesung, sondern die bessere Demo. Ein Prompt
+            # landet dann bei seinen *raeumlichen* Nachbarn, die Platzierung
+            # sieht plausibel aus und die Interaktion laesst sich vollstaendig
+            # ausprobieren — ohne 3 MB Fantasievektoren im Repo. Bedeutung hat
+            # sie weiterhin keine, und die Antwort sagt das.
+            self.embeddings = placement.l2_normalize(self.coords.astype(np.float32))
+            self.space = "coords"
+        else:
+            raise FileNotFoundError(
+                f"{embeddings_path} fehlt. Mit echtem Modell braucht der Dienst die "
+                "hochdimensionalen Embeddings — mit `lse project --keep-embeddings` "
+                "erzeugen. Zum Ausprobieren ohne Modell: `lse serve --stub`."
+            )
+
+        self.dim = int(self.embeddings.shape[1])
         self.encode = encoder or stub_encoder(self.dim)
 
     def place(self, text: str) -> dict[str, Any]:
@@ -126,6 +141,7 @@ class PromptService:
             "n": self.n,
             "dim": self.dim,
             "run": self.run_dir.name,
+            "space": self.space,
             "corpus": self.manifest.corpus.get("id", "?"),
         }
 

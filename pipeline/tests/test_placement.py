@@ -280,5 +280,16 @@ def test_service_without_embeddings_fails_clearly(cfg, tmp_path):
     writer.add_labels(labels, names)
     writer.finish(corpus={"id": "test"})
 
+    # Mit echtem Encoder ist das ein Fehler ...
     with pytest.raises(FileNotFoundError, match="keep-embeddings"):
-        server.PromptService(run_dir)
+        server.PromptService(run_dir, encoder=lambda text: np.zeros(4, dtype=np.float32))
+
+    # ... im Stub-Modus dagegen faellt der Dienst auf die 3D-Koordinaten als
+    # Suchraum zurueck, damit sich die Interaktion ohne Modell ausprobieren
+    # laesst.
+    service = server.PromptService(run_dir)
+    assert service.space == "coords"
+    assert service.dim == 3
+    result = service.place("eine Vase")
+    assert len(result["position"]) == 3
+    assert result["stub"] is True
