@@ -384,7 +384,10 @@ async function main() {
           link.textContent = 'Sammlungsseite öffnen';
           dd.append(link);
         } else {
-          dd.textContent = value;
+          // Die Met traegt Mehrfachwerte pipe-getrennt ein
+          // ("Allen & Ginter|Lindner, Eddy & Claus"). Roh sieht das nach
+          // kaputten Daten aus, obwohl es keine sind.
+          dd.textContent = value.split('|').filter(Boolean).join(' · ');
         }
         return [dt, dd];
       }),

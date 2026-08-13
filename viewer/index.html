@@ -99,6 +99,22 @@
         width: 232px;
         display: grid;
         gap: 10px;
+        /* Eigener Scrollbereich statt aus dem Fenster zu laufen. Ohne das
+           schiebt sich die Leiste bei niedrigen Fenstern ueber die Hilfezeile
+           und das Prompt-Feld wird unerreichbar. */
+        max-height: calc(100vh - 190px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        /* Lesbar bleiben, wenn Punkte dahinterliegen. */
+        padding: 10px;
+        margin: -10px;
+        background: linear-gradient(
+          to right,
+          rgba(7, 8, 12, 0.82) 0%,
+          rgba(7, 8, 12, 0.82) 88%,
+          rgba(7, 8, 12, 0) 100%
+        );
+        border-radius: 6px;
       }
       #controls input[type='search'],
       #controls select {
@@ -154,18 +170,26 @@
       }
       #reset:hover { color: var(--fg); }
 
+      /* Rechts, nicht links: die Bedienleiste waechst nach unten (vier Filter
+         plus Prompt-Feld), das Detailpanel nach oben. Auf derselben Seite
+         ueberlappten sie sich um bis zu 222x297 px — gemessen, nicht vermutet. */
       #detail {
         position: fixed;
-        bottom: 44px;
-        left: 12px;
+        top: 210px;
+        right: 12px;
         width: 320px;
+        max-height: calc(100vh - 300px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
         padding: 12px 14px;
         background: rgba(14, 16, 22, 0.94);
         border: 1px solid rgba(255, 255, 255, 0.13);
         border-radius: 6px;
       }
       #detail h2 {
-        margin: 0 0 8px;
+        /* Platz fuer das Schliesskreuz: ohne ihn laeuft ein langer Titel
+           darunter durch. */
+        margin: 0 22px 8px 0;
         font-size: 13px;
         line-height: 1.35;
       }
@@ -195,6 +219,54 @@
         border-top: 1px solid rgba(255, 255, 255, 0.1);
         color: var(--dim);
         font-size: 11px;
+      }
+
+      /* Kleine Fenster.
+         Gefunden beim Messen: bei 640x480 ueberlagerte die Bedienleiste die
+         Wolke, die Hilfezeile lief in das Prompt-Feld, und das Detailpanel lag
+         unter beidem. Der Viewer ging stillschweigend von einem grossen
+         Fenster aus — fuer eine oeffentliche Seite die falsche Annahme. */
+      @media (max-width: 900px), (max-height: 620px) {
+        #legend {
+          /* Acht Abteilungsnamen brauchen mehr Platz, als hier ist. Die Farben
+             bleiben, die Namen weichen in das Detailpanel aus. */
+          font-size: 11px;
+          max-width: 40vw;
+        }
+        #legend span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        #help { display: none; }
+        #controls { max-height: calc(100vh - 150px); }
+      }
+
+      @media (max-width: 720px) {
+        #controls {
+          width: calc(100vw - 24px);
+          max-height: 32vh;
+        }
+        #detail {
+          /* `top` muss ausdruecklich zurueckgesetzt werden. Sonst gelten top
+             UND bottom gleichzeitig, das Panel spannt sich ueber die ganze
+             Hoehe und schiebt sich unter die Bedienleiste — genau der Fehler,
+             den die Box-Messung mit 206 px Ueberlappung gezeigt hat. */
+          top: auto;
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+          width: auto;
+          max-height: 42vh;
+          overflow-y: auto;
+        }
+        #legend { display: none; }
+        #warning {
+          left: 12px;
+          right: 12px;
+          max-width: none;
+          text-align: left;
+        }
       }
 
       #status {
