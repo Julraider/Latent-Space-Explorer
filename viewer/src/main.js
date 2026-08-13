@@ -13,6 +13,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { loadArtifacts } from './artifacts.js';
 import { createNeighborLines } from './neighborLines.js';
 import { PICK_BUSY, Picker } from './picking.js';
+import { createPromptMarker } from './promptMarker.js';
 import {
   FLAG_MATCH,
   FLAG_NEIGHBOR,
@@ -63,7 +64,7 @@ for (const id of [
   'status', 'status-detail', 'hud', 'help', 'legend', 'warning', 'controls',
   'search', 'search-count', 'filters', 'reset', 'detail', 'detail-title',
   'detail-fields', 'detail-neighbors', 'stat-points', 'stat-backend',
-  'stat-frame', 'stat-draws',
+  'stat-frame', 'stat-draws', 'prompt', 'prompt-box', 'prompt-status',
 ]) {
   ui[id] = document.getElementById(id);
 }
@@ -160,6 +161,9 @@ async function main() {
 
   const neighborLines = createNeighborLines(data.neighborsK || 20, radius);
   scene.add(neighborLines);
+
+  const promptMarker = createPromptMarker({ worldSize: radius * 0.035 });
+  scene.add(promptMarker);
 
   // ---------------------------------------------------------------------
   // Kamerafahrt
@@ -485,6 +489,8 @@ async function main() {
     ui.search.value = '';
     runSearch('');
     activeFilters.clear();
+    promptMarker.hide();
+    ui['prompt-status'].textContent = '';
     for (const dropdown of ui.filters.querySelectorAll('select')) dropdown.value = '-1';
     applyFilters();
     select(-1);
@@ -551,6 +557,86 @@ async function main() {
   }
   controls.addEventListener('change', syncUrl);
 
+  // ---------------------------------------------------------------------
+  // Live-Prompt (optionaler lokaler Dienst)
+  // ---------------------------------------------------------------------
+
+  // Das Prompt-Feld erscheint nur, wenn ein Dienst antwortet. Ohne ihn bleibt
+  // alles andere voll funktionsfaehig — der Viewer ist eine statische Seite,
+  // und ein Feature, das einen laufenden Python-Prozess und eine dicke GPU
+  // voraussetzt, darf sie nicht als Ganzes unbenutzbar machen.
+  const SERVICE = params.get('service') ?? 'http://127.0.0.1:8765';
+  let serviceInfo = null;
+
+  fetch(`${SERVICE}/health`, { signal: AbortSignal.timeout(2500) })
+    .then((response) => (response.ok ? response.json() : null))
+    .then((info) => {
+      if (!info || info.n !== data.n) return;
+      serviceInfo = info;
+      ui['prompt-box'].hidden = false;
+      if (info.stub) {
+        ui['prompt-status'].className = 'stub';
+        ui['prompt-status'].textContent =
+          'Dienst im Stub-Modus: die Platzierung ist reproduzierbar, aber ohne Bedeutung.';
+      }
+    })
+    .catch(() => {
+      /* Kein Dienst — das Feld bleibt verborgen. Kein Fehler. */
+    });
+
+  async function submitPrompt(text) {
+    if (!serviceInfo || !text.trim()) return;
+    ui['prompt-status'].className = '';
+    ui['prompt-status'].textContent = 'platziere …';
+    try {
+      const response = await fetch(`${SERVICE}/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text.trim() }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? `HTTP ${response.status}`);
+
+      promptMarker.setPosition(result.position, { warn: !result.confident });
+
+      // Die Nachbarn, aus denen die Position gemittelt wurde, sichtbar machen:
+      // ohne sie ist der Marker eine Behauptung.
+      clearFlagEverywhere(FLAG_NEIGHBOR);
+      const targets = [];
+      for (const neighbor of result.neighbors) {
+        if (neighbor >= data.n) continue;
+        setFlag(neighbor, FLAG_NEIGHBOR, true);
+        targets.push(pointPosition(neighbor, new Vector3()).toArray());
+      }
+      cloud.commitFlags();
+      neighborLines.setNeighbors(result.position, targets);
+
+      flyTo(new Vector3().fromArray(result.position), radius * 0.8);
+
+      const spread = `${(result.spread * 100).toFixed(0)} % Streuung`;
+      if (result.stub) {
+        ui['prompt-status'].className = 'stub';
+        ui['prompt-status'].textContent =
+          `Stub-Modus — ${result.neighbors.length} Nachbarn, ${spread}. Ohne Bedeutung.`;
+      } else if (!result.confident) {
+        ui['prompt-status'].className = 'warn';
+        ui['prompt-status'].textContent = result.note;
+      } else {
+        ui['prompt-status'].className = '';
+        ui['prompt-status'].textContent =
+          `Platziert zwischen ${result.neighbors.length} nächsten Nachbarn (${spread}).`;
+      }
+    } catch (error) {
+      ui['prompt-status'].className = 'warn';
+      ui['prompt-status'].textContent = `Dienst antwortet nicht: ${error.message ?? error}`;
+    }
+  }
+
+  ui.prompt.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') submitPrompt(ui.prompt.value);
+  });
+
   function resize() {
     const { innerWidth: w, innerHeight: h } = window;
     camera.aspect = w / h;
@@ -581,7 +667,9 @@ async function main() {
     controls.update();
     // Der Pixel-Clamp haengt an Bildhoehe und Sichtfeld — beides kann sich
     // jederzeit aendern.
-    cloud.updateScreenMetrics(camera, renderer.getDrawingBufferSize(drawingBuffer).y);
+    const bufferHeight = renderer.getDrawingBufferSize(drawingBuffer).y;
+    cloud.updateScreenMetrics(camera, bufferHeight);
+    promptMarker.updateScreenMetrics(camera, bufferHeight);
     renderer.render(scene, camera);
 
     frameAccum += performance.now() - started;

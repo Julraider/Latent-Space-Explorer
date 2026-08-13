@@ -494,6 +494,69 @@ def cmd_synth(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    from . import server as server_module
+
+    config = load()
+    run = _resolve(config, args.out)
+
+    encoder = None
+    model_id = "stub"
+    if not args.stub:
+        from . import embedding
+
+        model_id = config.model["id"]
+        print(f"Lade {model_id} ...")
+        try:
+            device = embedding.pick_device(args.device)
+            model, processor = embedding.load_model(
+                model_id,
+                config.model["revision"],
+                device=device,
+                dtype=config.model["dtype"],
+            )
+        except embedding.EmbeddingError as exc:
+            _bad("Modell", exc)
+            print("\n  Mit --stub laeuft der Dienst ohne Modell: er prueft dann die")
+            print("  gesamte Kette (HTTP, Platzierung, Marker, Kamera), aber nicht")
+            print("  die Bedeutung der Platzierung.")
+            return 1
+
+        import torch
+
+        def encoder(text: str):  # noqa: F811
+            with torch.no_grad():
+                inputs = processor(
+                    text=[text], padding="max_length", truncation=True, return_tensors="pt"
+                ).to(device)
+                features = model.get_text_features(**inputs)
+            return features.float().cpu().numpy().astype(np.float32)[0]
+
+    try:
+        httpd = server_module.serve(
+            run, host=args.host, port=args.port, encoder=encoder, model_id=model_id, k=args.k
+        )
+    except FileNotFoundError as exc:
+        _bad("Artefakte", exc)
+        return 1
+
+    service = httpd.service
+    _section("Live-Prompt-Dienst")
+    _ok("Adresse", f"http://{args.host}:{args.port}")
+    _ok("Lauf", f"{run.name} ({service.n:,} Punkte, {service.dim}d)")
+    _ok("Modell", f"{model_id}{' (STUB — ohne Bedeutung)' if service.is_stub else ''}")
+    print("\n  Der Viewer blendet das Prompt-Feld automatisch ein, sobald /health")
+    print("  antwortet. Beenden mit Strg-C.\n")
+
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nBeendet.")
+    finally:
+        httpd.server_close()
+    return 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     from .artifacts import ArtifactError, load_manifest, verify
 
@@ -577,6 +640,19 @@ def build_parser() -> argparse.ArgumentParser:
     synth.add_argument("--keep-embeddings", action="store_true")
     synth.add_argument("--out", default="data/sample")
     synth.set_defaults(func=cmd_synth)
+
+    serve_cmd = sub.add_parser("serve", help="lokalen Dienst fuer den Live-Prompt starten")
+    serve_cmd.add_argument("--host", default="127.0.0.1")
+    serve_cmd.add_argument("--port", type=int, default=8765)
+    serve_cmd.add_argument("--k", type=int, default=12, help="Anzahl Nachbarn fuer die Platzierung")
+    serve_cmd.add_argument(
+        "--stub",
+        action="store_true",
+        help="ohne Modell: deterministische Pseudovektoren. Prueft die Kette, nicht die Bedeutung.",
+    )
+    serve_cmd.add_argument("--device", default=None)
+    serve_cmd.add_argument("--out", default=DEFAULT_RUN)
+    serve_cmd.set_defaults(func=cmd_serve)
 
     verify_cmd = sub.add_parser("verify", help="Artefaktsatz gegen sein Manifest pruefen")
     verify_cmd.add_argument("path", help="Verzeichnis mit manifest.json")

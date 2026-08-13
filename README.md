@@ -5,7 +5,8 @@ Bild-Text-Modell geschickt, die Embeddings auf drei Dimensionen reduziert und im
 dargestellt, durch die man sich bewegt. Ähnliches liegt nah beieinander. Man tippt eine Phrase, und
 sie landet an der Stelle, an die sie gehört.
 
-**Status:** Phase 0b — die Pipeline läuft von der Met-CSV bis in den Browser. Es fehlt genau ein
+**Status:** Alles gebaut, was ohne echte Embeddings baubar ist — Korpus, Projektion, Go/No-Go-Tor,
+Renderer, Klick, Filter, Suche, Nachbarschaftslinien und der Live-Prompt. Es fehlt genau ein
 Schritt: die Bilder und das Modell, beides gesperrt in der Entwicklungsumgebung
 (siehe [Lokal ausführen](#lokal-ausführen)).
 
@@ -78,9 +79,24 @@ Entwicklungsumgebung durch eine Egress-Richtlinie gesperrt sind:
 uv run --project pipeline lse fetch --n 1000   # Met-CSV -> gefilterte Auswahl
 uv run --project pipeline lse images           # braucht images.metmuseum.org
 uv run --project pipeline lse embed            # braucht huggingface.co + GPU
-uv run --project pipeline lse project          # Projektion + Go/No-Go-Tor
+uv run --project pipeline lse project --keep-embeddings   # Projektion + Go/No-Go-Tor
 uv run --project pipeline lse verify data/runs/dev
+uv run --project pipeline lse serve            # Live-Prompt-Dienst (braucht das Modell)
 ```
+
+Der Viewer blendet das Prompt-Feld automatisch ein, sobald `http://127.0.0.1:8765/health`
+antwortet, und verbirgt es sonst — **alles andere funktioniert ohne den Dienst.** Zum Prüfen der
+Kette ohne Modell:
+
+```bash
+uv run --project pipeline lse serve --stub
+```
+
+Der Stub erzeugt aus dem Text einen reproduzierbaren Pseudovektor. Damit lässt sich die gesamte
+Kette prüfen — HTTP, Platzierung, Marker, Kamerafahrt — aber **nicht die Bedeutung**: gleiche Prompts
+geben gleiche Punkte, ähnliche Prompts aber nicht ähnliche Punkte. Der Viewer sagt das im Klartext.
+
+![Live-Prompt im Raum](docs/img/phase4c-prompt.png)
 
 Für `embed` zusätzlich die Modellabhängigkeiten installieren:
 
@@ -144,7 +160,9 @@ In Phasen, jede mit einem Ausstiegskriterium. Der vollständige Plan steht in
 | **1** | Embeddings in Zielgröße | N Embeddings mit Manifest, Lauf nach `kill -9` wiederaufnehmbar |
 | **2** | Projektion + Transform-Entscheidung | Koordinaten normalisiert, kNN-Overlap gemessen |
 | **3** | Renderer in Zielgröße | Voller Korpus bei 60 fps, Sample rendert ohne Python |
-| **4a–c** | Klick, Filter, Suche, Live-Prompt | jeweils einzeln |
+| **4a** | Klick, Detailpanel, Facettenfilter | ✅ |
+| **4b** | Stichwortsuche | ✅ |
+| **4c** | Live-Prompt | ✅ Kette · ⏳ Bedeutung braucht `lse embed` |
 | **5** | Ausliefern | Eine fremde Person mit nur der URL kann eine Phrase tippen und hinfliegen |
 
 **Das Go/No-Go-Tor in Phase 0b** ist der wichtigste Punkt im Plan. UMAP erzeugt aus reinem

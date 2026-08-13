@@ -120,6 +120,28 @@
         color: var(--dim);
         min-height: 1.5em;
       }
+      #prompt-box {
+        display: grid;
+        gap: 6px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+      }
+      #prompt-box input {
+        width: 100%;
+        padding: 5px 7px;
+        font: inherit;
+        color: var(--fg);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 4px;
+      }
+      #prompt-status {
+        color: var(--dim);
+        font-size: 11px;
+        min-height: 1.4em;
+      }
+      #prompt-status.warn { color: #ffb27a; }
+      #prompt-status.stub { color: #d0a0ff; }
       #reset {
         justify-self: start;
         padding: 4px 9px;
@@ -211,6 +233,15 @@
       <div id="search-count"></div>
       <div id="filters"></div>
       <button id="reset" type="button">Zurücksetzen</button>
+
+      <div id="prompt-box" hidden>
+        <label>
+          Prompt in den Raum setzen
+          <input id="prompt" type="text" placeholder="z. B. ein Boot bei Sonnenuntergang"
+                 autocomplete="off" />
+        </label>
+        <div id="prompt-status"></div>
+      </div>
     </div>
 
     <div id="detail" hidden>
