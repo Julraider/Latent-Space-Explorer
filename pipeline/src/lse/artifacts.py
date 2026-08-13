@@ -68,10 +68,16 @@ FACETS_FILE = "facets.u8.bin"
 TEXT_FILE = "text.bin"
 TEXT_OFFSETS_FILE = "text_offsets.u32.bin"
 
-# Trennzeichen zwischen den Textfeldern eines Datensatzes. ASCII 31 (Unit
-# Separator) ist dafuer gedacht und kann in Museumsmetadaten nicht vorkommen —
-# anders als Semikolon, Pipe oder Tab, die alle in echten Titeln auftreten.
+# Trennzeichen innerhalb eines Datensatzes (ASCII 31, Unit Separator) und
+# zwischen Datensaetzen (ASCII 30, Record Separator). Beide sind genau dafuer
+# gedacht und koennen in Museumsmetadaten nicht vorkommen — anders als
+# Semikolon, Pipe oder Tab, die alle in echten Titeln auftreten.
+#
+# Der Datensatz-Trenner ist nicht redundant zur Offsettabelle: mit ihm kann der
+# Browser den gesamten Block EINMAL dekodieren und darin suchen, statt 100.000
+# Einzelaufrufe von TextDecoder zu machen.
 FIELD_SEPARATOR = "\x1f"
+RECORD_SEPARATOR = "\x1e"
 
 
 class ArtifactError(RuntimeError):
@@ -458,6 +464,7 @@ class ArtifactWriter:
         for index, row in enumerate(rows):
             record = FIELD_SEPARATOR.join(str(row.get(field, "")) for field in text_fields)
             blob.extend(record.encode("utf-8"))
+            blob.extend(RECORD_SEPARATOR.encode("utf-8"))
             offsets[index + 1] = len(blob)
 
         text_path = self.dir / TEXT_FILE
@@ -479,6 +486,7 @@ class ArtifactWriter:
             "facet_values": vocabularies,
             "text_fields": list(text_fields),
             "field_separator": FIELD_SEPARATOR,
+            "record_separator": RECORD_SEPARATOR,
         }
         return self._metadata
 

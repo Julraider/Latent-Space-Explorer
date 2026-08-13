@@ -30,8 +30,13 @@ from .config import Config, ConfigError, load
 
 DEFAULT_RUN = "data/runs/dev"
 
-# Felder im Detailpanel, in Anzeigereihenfolge. Das erste Feld ist der Titel und
-# wird zusaetzlich fuer die Stichwortsuche verwendet.
+# Felder im Detailpanel, in Anzeigereihenfolge.
+#
+# `link` fehlt hier bewusst. Jede Met-URL enthaelt "/art/collection/search/",
+# und der gesamte Textblock ist zugleich der Suchindex — eine Suche nach "art"
+# oder "search" wuerde also JEDEN Datensatz treffen. Der Viewer setzt die URL
+# stattdessen aus der Objekt-ID zusammen; sie folgt einem festen Muster. Das
+# spart nebenbei rund 50 Byte pro Datensatz.
 TEXT_FIELDS = [
     "title",
     "artist",
@@ -39,7 +44,7 @@ TEXT_FIELDS = [
     "medium",
     "classification",
     "object_number",
-    "link",
+    "object_id",
 ]
 
 
@@ -336,6 +341,13 @@ def cmd_project(args: argparse.Namespace) -> int:
     params = dict(config.projection)
     if args.epochs:
         params["umap_n_epochs"] = args.epochs
+    if args.unseeded:
+        # random_state erzwingt n_jobs=1 quer durch kNN-Bau UND Layout
+        # (umap_.py:2003) — auf einem vielkernigen Rechner grob Faktor 3-6
+        # Wall-Clock. Zum Explorieren ist das der falsche Preis; genau ein
+        # gesaeter Lauf fuer das veroeffentlichte Artefakt genuegt.
+        params["random_state"] = 0
+        print("  Unseeded und parallel — nicht reproduzierbar, aber deutlich schneller.")
 
     print(f"Projiziere {len(embeddings):,} x {embeddings.shape[1]} ...")
     result, pca, _ = projection.project(embeddings, params, verbose=True)
@@ -623,6 +635,11 @@ def build_parser() -> argparse.ArgumentParser:
     project.add_argument("--seed", type=int, default=20260803)
     project.add_argument("--epochs", type=int, default=None, help="UMAP-Epochen ueberschreiben")
     project.add_argument("--no-gate", action="store_true", help="Validierung ueberspringen")
+    project.add_argument(
+        "--unseeded",
+        action="store_true",
+        help="ohne festen Seed, dafuer parallel (Faktor 3-6 schneller, nicht reproduzierbar)",
+    )
     project.add_argument(
         "--placeholder",
         action="store_true",

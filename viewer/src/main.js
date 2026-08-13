@@ -54,6 +54,7 @@ const FIELD_LABELS = {
   classification: 'Gattung',
   object_number: 'Inventarnr.',
   link: 'Beim Met',
+  object_id: 'Objekt-ID',
   department: 'Abteilung',
   culture: 'Kultur',
   period: 'Epoche',
@@ -359,11 +360,15 @@ async function main() {
         seen.add(field);
       }
       for (const field of metadata.fields) {
-        if (seen.has(field)) continue;
+        if (seen.has(field) || field === 'object_id') continue;
         const value = record?.[field];
         if (value) rows.push([FIELD_LABELS[field] ?? field, value]);
         seen.add(field);
       }
+      // Aus der Objekt-ID zusammengesetzt, nicht mitgeliefert: der Textblock
+      // ist zugleich der Suchindex, und eine Met-URL enthaelt
+      // "/art/collection/search/" — "art" traefe sonst jeden Datensatz.
+      if (record?.link) rows.push([FIELD_LABELS.link, record.link]);
     }
 
     ui['detail-fields'].replaceChildren(

@@ -128,6 +128,7 @@ export async function loadArtifacts(base) {
         n,
         fields: manifest.metadata.text_fields,
         separator: manifest.metadata.field_separator,
+        recordSeparator: manifest.metadata.record_separator,
         facetFields: manifest.metadata.facet_fields,
         facetValues: manifest.metadata.facet_values,
         facets,

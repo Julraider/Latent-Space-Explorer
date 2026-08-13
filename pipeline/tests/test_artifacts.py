@@ -288,6 +288,24 @@ def _write_with_metadata(cfg, run_dir, rows):
     return writer.finish(corpus={"id": "test"}), meta
 
 
+def test_record_separator_enables_single_decode(cfg, run_dir):
+    """Der Trenner ist nicht redundant zur Offsettabelle.
+
+    Mit ihm kann der Browser den gesamten Block EINMAL dekodieren und darin
+    suchen. Ohne ihn braeuchte er bei 100.000 Punkten ebenso viele Aufrufe von
+    TextDecoder — der Unterschied zwischen wenigen Millisekunden und einem
+    sichtbaren Haenger.
+    """
+    rows = _rows(30)
+    _write_with_metadata(cfg, run_dir, rows)
+
+    blob = (run_dir / artifacts.TEXT_FILE).read_text(encoding="utf-8")
+    assert blob.count(artifacts.RECORD_SEPARATOR) == 30
+    records = blob.split(artifacts.RECORD_SEPARATOR)[:-1]
+    assert len(records) == 30
+    assert records[0].split(artifacts.FIELD_SEPARATOR)[0] == "Werk 0"
+
+
 def test_metadata_facets_and_text(cfg, run_dir):
     rows = _rows(50)
     manifest, meta = _write_with_metadata(cfg, run_dir, rows)
@@ -332,7 +350,9 @@ def test_text_roundtrips_including_umlauts_and_empty_fields(cfg, run_dir):
     )
     for index, source in enumerate(rows):
         record = blob[offsets[index] : offsets[index + 1]].decode("utf-8")
-        parts = record.split(artifacts.FIELD_SEPARATOR)
+        # Der Datensatz-Trenner gehoert zum Block, nicht zum Inhalt.
+        assert record.endswith(artifacts.RECORD_SEPARATOR)
+        parts = record[:-1].split(artifacts.FIELD_SEPARATOR)
         assert parts[0] == source["title"]
         assert parts[1] == source["artist"]
         assert parts[2] == source["link"]
@@ -357,7 +377,7 @@ def test_separator_cannot_collide_with_real_metadata(cfg, run_dir):
     blob = (run_dir / artifacts.TEXT_FILE).read_bytes()
     offsets = artifacts.read_binary(run_dir / artifacts.TEXT_OFFSETS_FILE, "<u4", (6,))
     record = blob[offsets[0] : offsets[1]].decode("utf-8")
-    assert record.split(artifacts.FIELD_SEPARATOR)[0] == "Teil A|Teil B; Teil C\tTeil D"
+    assert record[:-1].split(artifacts.FIELD_SEPARATOR)[0] == "Teil A|Teil B; Teil C\tTeil D"
 
 
 def test_metadata_participates_in_id_invariant(cfg, run_dir):
