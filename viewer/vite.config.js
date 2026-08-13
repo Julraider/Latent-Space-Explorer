@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
@@ -45,6 +46,23 @@ function serveArtifacts() {
             'Content-Type',
             target.endsWith('.json') ? 'application/json' : 'application/octet-stream',
           );
+
+          // Komprimieren, damit die Entwicklung dieselbe Groessenordnung sieht
+          // wie der Betrieb. Ohne das misst man ein Phantom: `text.bin` wiegt
+          // bei 100.000 Punkten roh 12,5 MB und gzipped 4,9 MB, und die
+          // Ladezeit ist fast vollstaendig Uebertragung — die Verarbeitung im
+          // Browser kostet unter 100 ms.
+          //
+          // Achtung fuer Phase 5: statische Hosts komprimieren meist nach
+          // Content-Type, und `application/octet-stream` ist dabei oft NICHT
+          // dabei. Das ist eine Deployment-Entscheidung, keine Kleinigkeit.
+          const accepts = String(req.headers['accept-encoding'] ?? '');
+          if (/\bgzip\b/.test(accepts) && stat.size > 4096) {
+            res.setHeader('Content-Encoding', 'gzip');
+            res.setHeader('Vary', 'Accept-Encoding');
+            fs.createReadStream(target).pipe(zlib.createGzip({ level: 5 })).pipe(res);
+            return;
+          }
           res.setHeader('Content-Length', stat.size);
           fs.createReadStream(target).pipe(res);
         });
