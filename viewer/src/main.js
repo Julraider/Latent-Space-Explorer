@@ -524,6 +524,45 @@ async function main() {
 
   ui.status.classList.add('hidden');
 
+  // Testzugang. Bewusst klein und ohne Zustand: er rechnet nur, was die Seite
+  // ohnehin weiss.
+  //
+  // Ohne ihn laesst sich Picking nicht deterministisch pruefen — man muesste
+  // raten, wo ein Punkt auf dem Bildschirm liegt, und trifft dann die Luecke
+  // zwischen zwei Clustern oder die Legendenschrift. Beides ist mir beim
+  // Messen passiert und hat je einen kompletten Durchlauf gekostet.
+  window.__lse = {
+    n: data.n,
+    /** Bildschirmposition eines Punktes in CSS-Pixeln, oder null hinter der Kamera. */
+    screenPosition(index) {
+      if (!(index >= 0 && index < data.n)) return null;
+      const world = pointPosition(index, new Vector3()).project(camera);
+      if (world.z > 1) return null;
+      const rect = renderer.domElement.getBoundingClientRect();
+      return {
+        x: ((world.x + 1) / 2) * rect.width,
+        y: ((1 - world.y) / 2) * rect.height,
+        onScreen: Math.abs(world.x) <= 1 && Math.abs(world.y) <= 1,
+      };
+    },
+    /** Sichtbarster Punkt: der, der der Bildmitte am naechsten liegt. */
+    pointNearCenter() {
+      let best = null;
+      const step = Math.max(1, Math.floor(data.n / 4000));
+      for (let index = 0; index < data.n; index += step) {
+        const screen = this.screenPosition(index);
+        if (!screen?.onScreen) continue;
+        const rect = renderer.domElement.getBoundingClientRect();
+        const dx = screen.x - rect.width / 2;
+        const dy = screen.y - rect.height / 2;
+        const distance = dx * dx + dy * dy;
+        if (!best || distance < best.distance) best = { index, ...screen, distance };
+      }
+      return best;
+    },
+    selectedIndex: () => selected,
+  };
+
   // Metadaten nachladen, ohne das erste Bild aufzuhalten.
   const restored = urlState.read();
   data.loadMetadata().then((loaded) => {
