@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "created_at": "2026-08-03T19:22:03+00:00",
+  "created_at": "2026-08-13T22:21:45+00:00",
   "n": 1000,
   "corpus": {
     "id": "met-open-access",
@@ -24,9 +24,10 @@
     ]
   },
   "model": {
-    "id": "placeholder",
-    "revision": "none",
-    "dim": 768
+    "id": "google/siglip2-base-patch16-224",
+    "revision": "main",
+    "dim": 768,
+    "dtype": "float16"
   },
   "projection": {
     "l2_normalize": true,
@@ -40,8 +41,8 @@
     "umap_densmap": false,
     "random_state": 20260803,
     "pca_explained_variance": 0.8997780680656433,
-    "seconds": 24.824041834000013,
-    "placeholder_embeddings": true
+    "seconds": 23.098827495000023,
+    "placeholder_embeddings": false
   },
   "coords": {
     "offset": [
@@ -175,9 +176,10 @@
       "medium",
       "classification",
       "object_number",
-      "link"
+      "object_id"
     ],
-    "field_separator": "\u001f"
+    "field_separator": "\u001f",
+    "record_separator": "\u001e"
   },
   "files": [
     {
@@ -235,8 +237,8 @@
       "shape": [
         1000
       ],
-      "bytes": 157122,
-      "sha256": "6b9a6f8ebb11279519d6117ad9cd400b99db190e787ca3d4cf42596e10dd907c"
+      "bytes": 111122,
+      "sha256": "694cfa667c39718d7569ff8407b2c869fcbecc217ce4fc5185c3af8d7918d38b"
     },
     {
       "name": "text_offsets.u32.bin",
@@ -245,11 +247,11 @@
         1001
       ],
       "bytes": 4004,
-      "sha256": "27e596d3e94b8ad4cd133b388d3533a382bc8aaf4c22128fdde78e2bfd6e9f92"
+      "sha256": "10f86dc766aae04dab38fa634be4b2a9df344983049a7d36e07bb7598a8595e1"
     }
   ],
   "provenance": {
-    "git_commit": "ed7d13a9c0e8e7ae02ed8d500dafe56a9cc27446",
+    "git_commit": "79d8ab3c9d11636e6001e69da6593a17dc545510",
     "libraries": {
       "python": "3.11.15",
       "numpy": "2.4.6",

@@ -235,6 +235,43 @@ Zeilenpermutation, 0,31 nach Spaltenpermutation. Der Test hält das fest.
 
 ---
 
+## E12 — Der Textblock ist zugleich der Suchindex, deshalb ohne URLs
+
+**Entschieden:** `text.bin` trägt Datensätze getrennt durch ASCII 30 (Record Separator), Felder
+getrennt durch ASCII 31. `link` steht **nicht** darin; der Viewer setzt die URL aus der Objekt-ID
+zusammen.
+
+**Warum ein Trenner, obwohl es schon eine Offsettabelle gibt.** Die Offsets sind **Byte**-Positionen,
+JS-Strings zählen aber UTF-16-Einheiten — bei Umlauten, CJK-Zeichen oder Emoji laufen beide
+auseinander. Ohne Trenner müsste der Browser jeden Datensatz einzeln dekodieren: bei 100.000 Punkten
+100.000 `TextDecoder`-Aufrufe plus ebenso viele `split`-Aufrufe und kurzlebige Stringobjekte. Mit
+Trenner wird **einmal** dekodiert, einmal gescannt, und die Suche ist danach ein `indexOf` über einen
+zusammenhängenden String.
+
+**Warum `link` raus muss.** Jede Met-URL enthält `/art/collection/search/`. Da der Block zugleich der
+Suchindex ist, hätte eine Suche nach „art" oder „search" **jeden** Datensatz getroffen. Die URL folgt
+einem festen Muster, ist also aus der Objekt-ID rekonstruierbar. Nebeneffekt: `text.bin` schrumpft
+bei 100.000 Punkten von 16,67 auf 12,47 MB.
+
+**Schutz vor stillen Fehlern:** ein Artefaktsatz ohne `record_separator` im Manifest lässt den Viewer
+mit klarer Meldung abbrechen. Ohne diese Prüfung wären die Offsets um eins pro Datensatz verschoben
+und das Detailpanel zeigte Bruchstücke fremder Einträge — der schlimmste Fehlermodus, weil er wie
+Daten aussieht.
+
+---
+
+## E13 — `--unseeded` für Explorationsläufe
+
+**Gemessen an 100.000 Punkten auf vier Kernen: 134 s mit Seed, 66 s ohne.**
+
+`random_state` erzwingt `n_jobs=1` quer durch pynndescents kNN-Bau **und** die Layout-Epochen
+(`umap_.py:2003`). Auf einer Maschine mit mehr Kernen ist der Faktor entsprechend größer.
+
+Politik: unseeded explorieren, genau **ein** gesäter Lauf für das veröffentlichte Artefakt, Seed im
+Manifest. Der Schalter macht das explizit statt es in der Config zu verstecken.
+
+---
+
 ## E8 — Egress-Beschränkung der Entwicklungsumgebung
 
 **Festgestellt am 2026-08-03, keine Entscheidung sondern eine Randbedingung.**

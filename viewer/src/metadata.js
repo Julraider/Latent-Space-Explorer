@@ -40,6 +40,19 @@ export class Metadata {
     this.facets = facets;
     this.offsets = offsets;
 
+    // Ein Artefaktsatz aus einer aelteren Pipeline hat keinen
+    // Datensatz-Trenner. Ohne Abbruch wuerde `indexOf('')` unten sofort
+    // zurueckkehren, die Offsets waeren um eins pro Datensatz verschoben, und
+    // das Detailpanel zeigte still Bruchstuecke fremder Eintraege — der
+    // schlimmste Fehlermodus, weil er wie Daten aussieht.
+    if (!recordSeparator) {
+      throw new Error(
+        'Der Artefaktsatz stammt aus einer aelteren Pipeline (kein '
+        + 'record_separator im Manifest). Neu erzeugen mit: '
+        + 'uv run --project pipeline lse project',
+      );
+    }
+
     // Einmal dekodieren. Danach wird nur noch in diesem String gearbeitet.
     this.blob = text ? decoder.decode(text) : '';
     // Kleingeschrieben fuer die Suche — ebenfalls genau einmal.
