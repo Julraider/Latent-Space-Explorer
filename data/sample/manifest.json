@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "created_at": "2026-08-13T22:21:45+00:00",
+  "created_at": "2026-08-14T10:10:29+00:00",
   "n": 1000,
   "corpus": {
     "id": "met-open-access",
@@ -41,7 +41,7 @@
     "umap_densmap": false,
     "random_state": 20260803,
     "pca_explained_variance": 0.8997780680656433,
-    "seconds": 23.098827495000023,
+    "seconds": 23.085639265999987,
     "placeholder_embeddings": false
   },
   "coords": {
@@ -190,7 +190,9 @@
         4
       ],
       "bytes": 8000,
-      "sha256": "e6c407078b3f77e93a01df2f868890391bcd94e1de1316e6a63373b491631cbc"
+      "sha256": "e6c407078b3f77e93a01df2f868890391bcd94e1de1316e6a63373b491631cbc",
+      "gzip_bytes": null,
+      "gzip_sha256": null
     },
     {
       "name": "labels.u16.bin",
@@ -199,7 +201,9 @@
         1000
       ],
       "bytes": 2000,
-      "sha256": "941991660e4187c6be981d2ccd09afac1c142084ac08c3938cf6bc6283dd6598"
+      "sha256": "941991660e4187c6be981d2ccd09afac1c142084ac08c3938cf6bc6283dd6598",
+      "gzip_bytes": null,
+      "gzip_sha256": null
     },
     {
       "name": "colors.u8.bin",
@@ -209,7 +213,9 @@
         4
       ],
       "bytes": 4000,
-      "sha256": "92c04ac619ac8a1bbcf976572401b857f433884e72687bb2fca108327402cb4a"
+      "sha256": "92c04ac619ac8a1bbcf976572401b857f433884e72687bb2fca108327402cb4a",
+      "gzip_bytes": null,
+      "gzip_sha256": null
     },
     {
       "name": "neighbors.u32.bin",
@@ -219,7 +225,9 @@
         20
       ],
       "bytes": 80000,
-      "sha256": "298f88d02f32375a50d04be387984bcf4df36bc76cdaa68512a5f70e101ef48b"
+      "sha256": "298f88d02f32375a50d04be387984bcf4df36bc76cdaa68512a5f70e101ef48b",
+      "gzip_bytes": 34412,
+      "gzip_sha256": "a168c9a1c9ba261c2e44835eca4c50e3d30116f8b12be03cdd1cecd811577263"
     },
     {
       "name": "facets.u8.bin",
@@ -229,7 +237,9 @@
         4
       ],
       "bytes": 4000,
-      "sha256": "47f965f1302e598245a976aedd63e9a4b76883cdcc70ebaaf34abf33f9d87026"
+      "sha256": "47f965f1302e598245a976aedd63e9a4b76883cdcc70ebaaf34abf33f9d87026",
+      "gzip_bytes": null,
+      "gzip_sha256": null
     },
     {
       "name": "text.bin",
@@ -238,7 +248,9 @@
         1000
       ],
       "bytes": 111122,
-      "sha256": "694cfa667c39718d7569ff8407b2c869fcbecc217ce4fc5185c3af8d7918d38b"
+      "sha256": "694cfa667c39718d7569ff8407b2c869fcbecc217ce4fc5185c3af8d7918d38b",
+      "gzip_bytes": 47322,
+      "gzip_sha256": "faa8bdd8b288f9b23e2c13b1ca99145477cf66f271ae8fcca86ec0afdc4db438"
     },
     {
       "name": "text_offsets.u32.bin",
@@ -247,11 +259,13 @@
         1001
       ],
       "bytes": 4004,
-      "sha256": "10f86dc766aae04dab38fa634be4b2a9df344983049a7d36e07bb7598a8595e1"
+      "sha256": "10f86dc766aae04dab38fa634be4b2a9df344983049a7d36e07bb7598a8595e1",
+      "gzip_bytes": null,
+      "gzip_sha256": null
     }
   ],
   "provenance": {
-    "git_commit": "79d8ab3c9d11636e6001e69da6593a17dc545510",
+    "git_commit": "9b5a95e909843a37137c9e356ef5d270b31b94e1",
     "libraries": {
       "python": "3.11.15",
       "numpy": "2.4.6",

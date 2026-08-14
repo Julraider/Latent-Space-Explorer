@@ -16,12 +16,39 @@ export const SCHEMA_VERSION = 1;
 
 export class ArtifactError extends Error {}
 
-async function fetchBinary(base, name, expectedBytes) {
-  const response = await fetch(`${base}/${name}`);
+/** Kann der Browser gzip selbst auspacken? */
+const CAN_UNGZIP = typeof DecompressionStream !== 'undefined';
+
+/**
+ * Holt eine Binaerdatei, bevorzugt die komprimierte Zweitfassung.
+ *
+ * Warum nicht einfach auf HTTP-Kompression vertrauen: statische Hosts
+ * entscheiden nach Content-Type, und `application/octet-stream` ist bei
+ * GitHub Pages und Verwandten meist nicht dabei. Header lassen sich dort nicht
+ * setzen. Ohne eigene Fassung wuerden bei 100.000 Punkten 12,5 MB Text
+ * uebertragen statt 4,9 MB.
+ *
+ * Der Aufwand faellt einmalig an und ist klein: `DecompressionStream` ist in
+ * allen Zielbrowsern vorhanden, und die Pruefung der ausgepackten Groesse
+ * gegen das Manifest faengt eine halb uebertragene Datei zuverlaessig ab.
+ */
+async function fetchBinary(base, name, entry) {
+  const expectedBytes = typeof entry === 'number' ? entry : entry?.bytes;
+  const packed = typeof entry === 'object' && entry?.gzip_bytes && CAN_UNGZIP;
+
+  const response = await fetch(`${base}/${name}${packed ? '.gz' : ''}`);
   if (!response.ok) {
     throw new ArtifactError(`${name}: HTTP ${response.status}`);
   }
-  const buffer = await response.arrayBuffer();
+
+  let buffer;
+  if (packed) {
+    const stream = response.body.pipeThrough(new DecompressionStream('gzip'));
+    buffer = await new Response(stream).arrayBuffer();
+  } else {
+    buffer = await response.arrayBuffer();
+  }
+
   if (expectedBytes !== undefined && buffer.byteLength !== expectedBytes) {
     throw new ArtifactError(
       `${name}: ${buffer.byteLength} Bytes gelesen, ${expectedBytes} laut Manifest. ` +
@@ -66,9 +93,9 @@ export async function loadArtifacts(base) {
   const colorStride = manifest.coords.color_stride;
 
   const [coordsBuf, colorsBuf, labelsBuf] = await Promise.all([
-    fetchBinary(base, 'coords.i16.bin', files['coords.i16.bin']?.bytes),
-    fetchBinary(base, 'colors.u8.bin', files['colors.u8.bin']?.bytes),
-    fetchBinary(base, 'labels.u16.bin', files['labels.u16.bin']?.bytes),
+    fetchBinary(base, 'coords.i16.bin', files['coords.i16.bin']),
+    fetchBinary(base, 'colors.u8.bin', files['colors.u8.bin']),
+    fetchBinary(base, 'labels.u16.bin', files['labels.u16.bin']),
   ]);
 
   // Nachbarn werden NICHT mitgeladen. Sie tragen die Ehrlichkeitsschicht (die
@@ -81,7 +108,7 @@ export async function loadArtifacts(base) {
   let neighborsPromise = null;
   const loadNeighbors = () => {
     if (!neighborEntry) return Promise.resolve(null);
-    neighborsPromise ??= fetchBinary(base, 'neighbors.u32.bin', neighborEntry.bytes).then(
+    neighborsPromise ??= fetchBinary(base, 'neighbors.u32.bin', neighborEntry).then(
       (buffer) => new Uint32Array(buffer),
     );
     return neighborsPromise;
@@ -92,7 +119,7 @@ export async function loadArtifacts(base) {
   let facets = null;
   const facetEntry = files['facets.u8.bin'];
   if (facetEntry) {
-    facets = new Uint8Array(await fetchBinary(base, 'facets.u8.bin', facetEntry.bytes));
+    facets = new Uint8Array(await fetchBinary(base, 'facets.u8.bin', facetEntry));
   }
 
   const coords = new Int16Array(coordsBuf);
@@ -120,8 +147,8 @@ export async function loadArtifacts(base) {
       return Promise.resolve(null);
     }
     metadataPromise ??= Promise.all([
-      fetchBinary(base, 'text.bin', textEntry.bytes),
-      fetchBinary(base, 'text_offsets.u32.bin', offsetsEntry.bytes),
+      fetchBinary(base, 'text.bin', textEntry),
+      fetchBinary(base, 'text_offsets.u32.bin', offsetsEntry),
     ]).then(async ([textBuf, offsetBuf]) => {
       const { Metadata } = await import('./metadata.js');
       return new Metadata({

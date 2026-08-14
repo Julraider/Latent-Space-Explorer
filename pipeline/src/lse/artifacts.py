@@ -22,6 +22,7 @@ Kopie machen kann.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import platform
@@ -211,6 +212,13 @@ def prepare_coords(coords: np.ndarray, box: float) -> tuple[np.ndarray, CoordSpe
 # ---------------------------------------------------------------------------
 
 
+# Ab dieser Ersparnis lohnt die komprimierte Zweitfassung. Darunter kostet der
+# zusaetzliche Abruf mehr, als er spart.
+GZIP_MIN_SAVING = 0.15
+# Unterhalb dieser Groesse dominiert der Verbindungsaufbau, nicht die Nutzlast.
+GZIP_MIN_BYTES = 64 * 1024
+
+
 @dataclass
 class FileEntry:
     """Ein Eintrag in der Dateiliste des Manifests."""
@@ -220,6 +228,16 @@ class FileEntry:
     shape: list[int]
     bytes: int
     sha256: str
+    # Komprimierte Zweitfassung, falls sie sich lohnt.
+    #
+    # Sie liegt NICHT deshalb da, weil HTTP nicht komprimieren koennte, sondern
+    # weil statische Hosts nach Content-Type entscheiden — und
+    # `application/octet-stream` ist bei GitHub Pages und Verwandten meist
+    # nicht dabei. Ohne eigene Fassung wuerden bei 100k Punkten 12,5 MB Text
+    # statt 4,9 MB uebertragen, und Header lassen sich dort nicht setzen.
+    # Der Browser packt sie mit `DecompressionStream` selbst aus.
+    gzip_bytes: int | None = None
+    gzip_sha256: str | None = None
 
 
 def sha256_file(path: Path, chunk: int = 1 << 20) -> str:
@@ -228,6 +246,32 @@ def sha256_file(path: Path, chunk: int = 1 << 20) -> str:
         while block := fh.read(chunk):
             digest.update(block)
     return digest.hexdigest()
+
+
+def maybe_compress(path: Path, entry: FileEntry) -> FileEntry:
+    """Legt eine gzip-Fassung daneben, wenn sie sich lohnt.
+
+    Wird sie kleiner als der Schwellwert hergibt, bleibt es bei der rohen
+    Datei und eine eventuell vorhandene alte ``.gz`` wird entfernt — sonst
+    laedt der Viewer eine veraltete Zweitfassung.
+    """
+    target = path.with_suffix(path.suffix + ".gz")
+    if entry.bytes < GZIP_MIN_BYTES:
+        target.unlink(missing_ok=True)
+        return entry
+
+    raw = path.read_bytes()
+    # mtime=0: sonst unterscheiden sich zwei Laeufe derselben Daten in der
+    # Pruefsumme, und "muss ich neu generieren?" wird unbeantwortbar.
+    packed = gzip.compress(raw, compresslevel=6, mtime=0)
+    if len(packed) > entry.bytes * (1 - GZIP_MIN_SAVING):
+        target.unlink(missing_ok=True)
+        return entry
+
+    target.write_bytes(packed)
+    entry.gzip_bytes = len(packed)
+    entry.gzip_sha256 = hashlib.sha256(packed).hexdigest()
+    return entry
 
 
 def write_binary(path: Path, arr: np.ndarray, dtype: str) -> FileEntry:
@@ -240,13 +284,13 @@ def write_binary(path: Path, arr: np.ndarray, dtype: str) -> FileEntry:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as fh:
         fh.write(arr.tobytes(order="C"))
-    return FileEntry(
+    return maybe_compress(path, FileEntry(
         name=path.name,
         dtype=dtype,
         shape=list(arr.shape),
         bytes=path.stat().st_size,
         sha256=sha256_file(path),
-    )
+    ))
 
 
 def read_binary(path: Path, dtype: str, shape: Iterable[int]) -> np.ndarray:
@@ -470,12 +514,15 @@ class ArtifactWriter:
         text_path = self.dir / TEXT_FILE
         text_path.write_bytes(bytes(blob))
         self._files.append(
-            FileEntry(
-                name=TEXT_FILE,
-                dtype="utf-8",
-                shape=[len(rows)],
-                bytes=text_path.stat().st_size,
-                sha256=sha256_file(text_path),
+            maybe_compress(
+                text_path,
+                FileEntry(
+                    name=TEXT_FILE,
+                    dtype="utf-8",
+                    shape=[len(rows)],
+                    bytes=text_path.stat().st_size,
+                    sha256=sha256_file(text_path),
+                ),
             )
         )
         self._files.append(write_binary(self.dir / TEXT_OFFSETS_FILE, offsets, "<u4"))
@@ -590,6 +637,16 @@ def verify(run_dir: Path) -> list[str]:
         actual = sha256_file(path)
         if actual != entry["sha256"]:
             problems.append(f"{entry['name']}: Pruefsumme weicht ab")
+            continue
+
+        if entry.get("gzip_bytes"):
+            packed = run_dir / (entry["name"] + ".gz")
+            if not packed.is_file():
+                problems.append(f"{entry['name']}.gz: fehlt")
+            elif packed.stat().st_size != entry["gzip_bytes"]:
+                problems.append(f"{entry['name']}.gz: Groesse weicht ab")
+            elif sha256_file(packed) != entry["gzip_sha256"]:
+                problems.append(f"{entry['name']}.gz: Pruefsumme weicht ab")
 
     for entry in manifest.files:
         shape = entry.get("shape") or []

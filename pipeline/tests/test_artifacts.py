@@ -257,6 +257,121 @@ def test_manifest_roundtrip(cfg, run_dir):
 
 
 # ---------------------------------------------------------------------------
+# Komprimierte Zweitfassungen
+# ---------------------------------------------------------------------------
+
+
+def test_large_compressible_files_get_a_gz_sidecar(cfg, run_dir):
+    """Nicht wegen HTTP, sondern wegen der Hosts.
+
+    Statische Hosts komprimieren nach Content-Type, und
+    `application/octet-stream` ist dabei meist nicht dabei. Header lassen sich
+    auf GitHub Pages nicht setzen — ohne eigene Fassung wuerden bei 100k
+    Punkten 12,5 MB Text uebertragen statt 4,9 MB.
+    """
+    import gzip
+
+    n = 40_000
+    coords, labels, names = synthetic.make_coords(n, seed=4)
+    writer = artifacts.ArtifactWriter(run_dir, cfg)
+    writer.add_coords(coords)
+    writer.add_labels(labels, names)
+    writer.add_colors(synthetic.palette_colors(labels))
+    manifest = writer.finish(corpus={"id": "test"})
+
+    by_name = {f["name"]: f for f in manifest.files}
+    # Farben und Labels sind gross genug und komprimieren stark.
+    packed = by_name[artifacts.COLORS_FILE]
+    assert packed["gzip_bytes"] and packed["gzip_bytes"] < packed["bytes"]
+
+    path = run_dir / (artifacts.COLORS_FILE + ".gz")
+    assert path.is_file()
+    assert path.stat().st_size == packed["gzip_bytes"]
+    # Und die Fassung muss das Original ergeben.
+    assert gzip.decompress(path.read_bytes()) == (run_dir / artifacts.COLORS_FILE).read_bytes()
+
+
+def test_incompressible_files_get_no_sidecar(cfg, run_dir):
+    """Quantisierte Koordinaten sind nahezu zufaellige Bitmuster.
+
+    Eine Zweitfassung, die kaum kleiner ist, kostet einen zusaetzlichen Abruf
+    und bringt nichts. Genau deshalb war die Quantisierung noetig und nicht
+    "gzip macht das schon".
+    """
+    n = 40_000
+    coords, labels, names = synthetic.make_coords(n, seed=5)
+    writer = artifacts.ArtifactWriter(run_dir, cfg)
+    writer.add_coords(coords)
+    writer.add_labels(labels, names)
+    writer.finish(corpus={"id": "test"})
+
+    entry = next(f for f in artifacts.load_manifest(run_dir).files
+                 if f["name"] == artifacts.COORDS_FILE)
+    assert entry["gzip_bytes"] is None
+    assert not (run_dir / (artifacts.COORDS_FILE + ".gz")).exists()
+
+
+def test_small_files_get_no_sidecar(cfg, run_dir):
+    """Unter der Mindestgroesse dominiert der Verbindungsaufbau."""
+    manifest, _, _ = _write_set(cfg, run_dir, n=100)
+    assert all(f["gzip_bytes"] is None for f in manifest.files)
+
+
+def test_gz_is_reproducible(cfg, tmp_path):
+    """Ohne feste mtime unterscheiden sich zwei Laeufe derselben Daten.
+
+    Dann waere "muss ich neu generieren?" nicht mehr beantwortbar.
+    """
+    digests = []
+    for run in ("a", "b"):
+        run_dir = tmp_path / run
+        coords, labels, names = synthetic.make_coords(40_000, seed=6)
+        writer = artifacts.ArtifactWriter(run_dir, cfg)
+        writer.add_coords(coords)
+        writer.add_labels(labels, names)
+        writer.add_colors(synthetic.palette_colors(labels))
+        manifest = writer.finish(corpus={"id": "test"})
+        digests.append(
+            next(f["gzip_sha256"] for f in manifest.files if f["name"] == artifacts.COLORS_FILE)
+        )
+    assert digests[0] == digests[1]
+
+
+def test_verify_checks_the_sidecar(cfg, run_dir):
+    coords, labels, names = synthetic.make_coords(40_000, seed=7)
+    writer = artifacts.ArtifactWriter(run_dir, cfg)
+    writer.add_coords(coords)
+    writer.add_labels(labels, names)
+    writer.add_colors(synthetic.palette_colors(labels))
+    writer.finish(corpus={"id": "test"})
+    assert artifacts.verify(run_dir) == []
+
+    packed = run_dir / (artifacts.COLORS_FILE + ".gz")
+    data = bytearray(packed.read_bytes())
+    data[-1] ^= 0xFF
+    packed.write_bytes(bytes(data))
+    assert any("Pruefsumme" in p for p in artifacts.verify(run_dir))
+
+    packed.unlink()
+    assert any("fehlt" in p for p in artifacts.verify(run_dir))
+
+
+def test_stale_sidecar_is_removed(cfg, run_dir):
+    """Sonst laedt der Viewer eine veraltete Zweitfassung."""
+    stale = run_dir / (artifacts.COORDS_FILE + ".gz")
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_bytes(b"veraltet")
+
+    coords, labels, names = synthetic.make_coords(40_000, seed=8)
+    writer = artifacts.ArtifactWriter(run_dir, cfg)
+    writer.add_coords(coords)
+    writer.add_labels(labels, names)
+    writer.finish(corpus={"id": "test"})
+
+    assert not stale.exists()
+
+
+# ---------------------------------------------------------------------------
 # Metadaten
 # ---------------------------------------------------------------------------
 
